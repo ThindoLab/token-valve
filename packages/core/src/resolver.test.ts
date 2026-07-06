@@ -51,6 +51,46 @@ describe("resolveContext", () => {
     });
   });
 
+  it("blocks automatic write operations for unverified profiles", () => {
+    const result = resolveContext({
+      workspace: "/workspaces/token-valve",
+      config: {
+        workspaces: [
+          {
+            path: "/workspaces/token-valve",
+            providers: {
+              supabase: {
+                profile: "supabase:unverified",
+                environment: "staging"
+              }
+            }
+          }
+        ],
+        profiles: [
+          {
+            id: "supabase:unverified",
+            provider: "supabase",
+            environment: "staging",
+            status: "unverified"
+          }
+        ]
+      },
+      adapters: fixtureAdapters,
+      execution: {
+        kind: "cli",
+        command: "supabase",
+        args: ["db", "push"]
+      }
+    });
+
+    expect(result).toMatchObject({
+      decision: "blocked",
+      reason: "profile_not_verified",
+      profile: "supabase:unverified",
+      risk: "write"
+    });
+  });
+
   it("blocks a configured dangerous GitHub command until human intent exists", () => {
     const result = resolveContext({
       workspace: "/workspaces/token-valve",

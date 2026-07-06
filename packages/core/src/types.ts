@@ -16,6 +16,7 @@ export type DecisionReason =
   | "workspace_not_configured"
   | "provider_not_configured"
   | "profile_not_configured"
+  | "profile_not_verified"
   | "environment_not_configured"
   | "capability_not_configured"
   | "risk_unknown"
@@ -49,6 +50,13 @@ export interface ProfileMetadata {
   environment?: string;
   displayName?: string;
   status?: "draft" | "unverified" | "verified" | "expired" | "disabled";
+  useCases?: string[];
+  maskedFingerprint?: string;
+  secretLength?: number;
+  boundWorkspaces?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+  lastVerifiedAt?: string;
 }
 
 export interface AdapterDefinition {

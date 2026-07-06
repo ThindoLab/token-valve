@@ -93,6 +93,19 @@ export function resolveContext(input: ResolveInput): ResolveResult {
     });
   }
 
+  if (risk === "write" && (profile.status ?? "verified") !== "verified") {
+    return blocked("profile_not_verified", `Profile is not verified for automatic write operations: ${profile.id}. Run tokenvalve secret test before executing writes.`, {
+      workspace: binding.path,
+      provider,
+      profile: profile.id,
+      environment,
+      capability: capability.id,
+      capabilityType: capability.type,
+      risk,
+      session: getSessionResult(input, usedSessionOverride)
+    });
+  }
+
   if (risk === "dangerous" || risk === "production_deploy") {
     return blocked("human_intent_required", `Human intent is required for ${risk} operations.`, {
       workspace: binding.path,

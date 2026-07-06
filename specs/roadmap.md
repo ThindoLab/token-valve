@@ -149,7 +149,7 @@
 - dry-run 能展示 GitHub/Supabase/Vercel/LLM 的解析结果。
 - production 写操作默认需要 human intent。
 
-### Phase 7: 密钥库存与 Profile 管理
+### Phase 7: 密钥库存与 Profile 管理（已完成）
 
 交付物：本地 secret profile 管理能力。
 
