@@ -154,6 +154,96 @@ describe("resolveContext", () => {
     expect(JSON.stringify(result)).not.toMatch(/apiKey|secretValue|sk-/i);
   });
 
+  it("uses LLM client override before workspace default", () => {
+    const result = resolveContext({
+      workspace: "/workspaces/token-valve",
+      config: {
+        workspaces: [
+          {
+            path: "/workspaces/token-valve",
+            providers: {
+              openai: {
+                profile: "openai:personal",
+                clientProfiles: {
+                  codex: "openai:codex"
+                },
+                capabilityProfiles: {
+                  review: "openai:review"
+                }
+              }
+            }
+          }
+        ],
+        profiles: [
+          { id: "openai:personal", provider: "openai", status: "verified" },
+          { id: "openai:codex", provider: "openai", status: "verified" },
+          { id: "openai:review", provider: "openai", status: "verified" }
+        ]
+      },
+      adapters: [{
+        provider: "openai",
+        capabilities: [{ id: "openai-default", type: "llm-api-key", provider: "openai", useCases: ["code-generation", "review"] }],
+        riskRules: [{ capability: "openai-default", risk: "read" }]
+      }],
+      session: {
+        id: "session-codex",
+        client: "codex"
+      },
+      execution: {
+        kind: "llm",
+        provider: "openai",
+        useCase: "code-generation"
+      }
+    });
+
+    expect(result).toMatchObject({
+      decision: "allow",
+      provider: "openai",
+      profile: "openai:codex"
+    });
+  });
+
+  it("uses LLM use-case override when no client override matches", () => {
+    const result = resolveContext({
+      workspace: "/workspaces/token-valve",
+      config: {
+        workspaces: [
+          {
+            path: "/workspaces/token-valve",
+            providers: {
+              openai: {
+                profile: "openai:personal",
+                capabilityProfiles: {
+                  review: "openai:review"
+                }
+              }
+            }
+          }
+        ],
+        profiles: [
+          { id: "openai:personal", provider: "openai", status: "verified" },
+          { id: "openai:review", provider: "openai", status: "verified" }
+        ]
+      },
+      adapters: [{
+        provider: "openai",
+        capabilities: [{ id: "openai-default", type: "llm-api-key", provider: "openai", useCases: ["code-generation", "review"] }],
+        riskRules: [{ capability: "openai-default", risk: "read" }]
+      }],
+      execution: {
+        kind: "llm",
+        provider: "openai",
+        useCase: "review"
+      }
+    });
+
+    expect(result).toMatchObject({
+      decision: "allow",
+      provider: "openai",
+      profile: "openai:review"
+    });
+  });
+
   it("allows a configured custom provider HTTP read request", () => {
     const result = resolveContext({
       workspace: "/workspaces/token-valve",

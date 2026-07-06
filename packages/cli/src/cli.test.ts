@@ -169,4 +169,101 @@ describe("tokenvalve cli", () => {
     const listOutput = await runCli(["secret", "list", "--config-dir", configDir], { secretStore: store });
     expect(listOutput).toContain("- none");
   });
+
+  it("manages LLM key profiles and resolves client defaults without printing API keys", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "tokenvalve-cli-llm-"));
+    const configDir = path.join(workspace, ".tokenvalve");
+    const store = new MemorySecretStore();
+    const openaiKey = "sk_openai_cli_secret";
+    const anthropicKey = "sk_anthropic_cli_secret";
+
+    const openaiOutput = await runCli([
+      "llm",
+      "add",
+      "--config-dir",
+      configDir,
+      "--workspace",
+      workspace,
+      "--profile",
+      "openai:work",
+      "--provider",
+      "openai",
+      "--api-key",
+      openaiKey,
+      "--base-url",
+      "https://api.openai.com/v1",
+      "--model",
+      "gpt-4.1",
+      "--use-case",
+      "code-generation",
+      "--client",
+      "codex",
+      "--yes"
+    ], { secretStore: store });
+    expect(openaiOutput).toContain("TokenValve llm");
+    expect(openaiOutput).toContain("added: openai:work");
+    expect(openaiOutput).not.toContain(openaiKey);
+
+    await runCli([
+      "llm",
+      "add",
+      "--config-dir",
+      configDir,
+      "--workspace",
+      workspace,
+      "--profile",
+      "anthropic:work",
+      "--provider",
+      "anthropic",
+      "--api-key",
+      anthropicKey,
+      "--model",
+      "claude-sonnet",
+      "--use-case",
+      "review",
+      "--yes"
+    ], { secretStore: store });
+
+    const listOutput = await runCli(["llm", "list", "--config-dir", configDir], { secretStore: store });
+    expect(listOutput).toContain("openai:work");
+    expect(listOutput).toContain("anthropic:work");
+    expect(listOutput).toContain("model=gpt-4.1");
+    expect(listOutput).not.toContain(openaiKey);
+    expect(listOutput).not.toContain(anthropicKey);
+
+    await runCli([
+      "llm",
+      "use",
+      "openai:work",
+      "--config-dir",
+      configDir,
+      "--workspace",
+      workspace,
+      "--provider",
+      "openai",
+      "--client",
+      "codex",
+      "--use-case",
+      "code-generation",
+      "--yes"
+    ], { secretStore: store });
+
+    const resolveOutput = await runCli([
+      "llm",
+      "resolve",
+      "--config-dir",
+      configDir,
+      "--workspace",
+      workspace,
+      "--provider",
+      "openai",
+      "--client",
+      "codex",
+      "--use-case",
+      "code-generation"
+    ], { secretStore: store });
+    expect(resolveOutput).toContain("decision: allow");
+    expect(resolveOutput).toContain("profile: openai:work");
+    expect(resolveOutput).not.toContain(openaiKey);
+  });
 });

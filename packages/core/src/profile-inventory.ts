@@ -4,7 +4,7 @@ import path from "node:path";
 import { parse, stringify } from "yaml";
 import { canonicalizeWorkspace } from "./resolver.js";
 import { createSecretRef, type SecretRef, type SecretStore } from "./secret-store.js";
-import type { ProfileMetadata, WorkspaceBinding } from "./types.js";
+import type { LlmProfileMetadata, ProfileMetadata, WorkspaceBinding } from "./types.js";
 
 export type ProfileStatus = NonNullable<ProfileMetadata["status"]>;
 
@@ -27,6 +27,7 @@ export interface AddSecretProfileInput {
   workspace?: string;
   secretValue: string;
   field?: string;
+  llm?: LlmProfileMetadata;
   replace?: boolean;
   yes: boolean;
 }
@@ -40,6 +41,16 @@ export interface UpdateSecretProfileInput {
   status?: ProfileStatus;
   secretValue?: string;
   field?: string;
+  llm?: LlmProfileMetadata;
+  yes: boolean;
+}
+
+export interface SetDefaultProfileInput {
+  profileId: string;
+  provider: string;
+  workspace: string;
+  client?: string;
+  useCase?: string;
   yes: boolean;
 }
 
@@ -75,6 +86,10 @@ export class ProfileInventory {
     return this.readFiles().profiles.profiles;
   }
 
+  public getBindings(): WorkspaceBinding[] {
+    return this.readFiles().bindings.workspaces;
+  }
+
   public async addProfile(input: AddSecretProfileInput): Promise<SecretProfileResult> {
     requireYes(input.yes, "add");
     assertNonEmpty(input.profileId, "profile id");
@@ -101,6 +116,7 @@ export class ProfileInventory {
       displayName: input.displayName ?? existing?.displayName,
       status: "unverified",
       useCases: input.useCases ?? existing?.useCases,
+      llm: input.llm ?? existing?.llm,
       maskedFingerprint: fingerprint.masked,
       secretLength: fingerprint.length,
       boundWorkspaces,
@@ -165,6 +181,7 @@ export class ProfileInventory {
       environment: input.environment ?? existing.environment,
       displayName: input.displayName ?? existing.displayName,
       useCases: input.useCases ?? existing.useCases,
+      llm: input.llm ?? existing.llm,
       status,
       maskedFingerprint,
       secretLength,
@@ -176,6 +193,26 @@ export class ProfileInventory {
     updateBindingsForProfile(files, existing, profile);
     this.writeFiles(files);
     return { profile, secretRef: ref };
+  }
+
+  public setDefaultProfile(input: SetDefaultProfileInput): ProfileMetadata {
+    requireYes(input.yes, "use");
+    assertNonEmpty(input.profileId, "profile id");
+    assertNonEmpty(input.provider, "provider");
+    assertNonEmpty(input.workspace, "workspace");
+
+    const files = this.readFiles();
+    const profile = findProfileOrThrow(files, input.profileId);
+    if (profile.provider !== input.provider) {
+      throw new Error(`Profile ${profile.id} belongs to provider ${profile.provider}, not ${input.provider}.`);
+    }
+
+    bindWorkspace(files, canonicalizeWorkspace(input.workspace), input.provider, profile.id, profile.environment, {
+      client: input.client,
+      useCase: input.useCase
+    });
+    this.writeFiles(files);
+    return profile;
   }
 
   public async deleteProfile(input: DeleteSecretProfileInput): Promise<ProfileMetadata> {
@@ -284,10 +321,32 @@ function upsertProfile(files: ProfileInventoryFiles, profile: ProfileMetadata): 
   }
 }
 
-function bindWorkspace(files: ProfileInventoryFiles, workspace: string, provider: string, profileId: string, environment?: string): void {
+function bindWorkspace(
+  files: ProfileInventoryFiles,
+  workspace: string,
+  provider: string,
+  profileId: string,
+  environment?: string,
+  override?: { client?: string; useCase?: string }
+): void {
   const existing = files.bindings.workspaces.find((binding) => canonicalizeWorkspace(binding.path) === workspace);
   const binding = existing ?? { path: workspace, providers: {} };
-  binding.providers[provider] = { profile: profileId, environment };
+  const providerBinding = binding.providers[provider] ?? { profile: profileId, environment };
+  if (override?.client) {
+    providerBinding.clientProfiles = {
+      ...providerBinding.clientProfiles,
+      [override.client]: profileId
+    };
+  } else if (override?.useCase) {
+    providerBinding.capabilityProfiles = {
+      ...providerBinding.capabilityProfiles,
+      [override.useCase]: profileId
+    };
+  } else {
+    providerBinding.profile = profileId;
+    providerBinding.environment = environment;
+  }
+  binding.providers[provider] = providerBinding;
   if (!existing) {
     files.bindings.workspaces.push(binding);
   }

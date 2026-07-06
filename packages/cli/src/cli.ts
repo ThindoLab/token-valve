@@ -5,7 +5,10 @@ import {
   getCoreHealth,
   MacOSKeychainSecretStore,
   ProfileInventory,
+  resolveContext,
   runScenarioInit,
+  type AdapterDefinition,
+  type ProfileMetadata,
   type ProfileStatus,
   type SecretStore,
   type SupportedInitProvider
@@ -178,6 +181,113 @@ export function createCli(options: CliOptions = {}): Command {
       writeOut(formatSecretChanged("verified", result.profile));
     });
 
+  const llm = program
+    .command("llm")
+    .description("Manage LLM API key profiles and defaults.");
+
+  llm
+    .command("add")
+    .description("Add an LLM API key profile.")
+    .requiredOption("--profile <id>", "Profile id.")
+    .requiredOption("--provider <name>", "LLM provider.")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--workspace <path>", "Workspace path to bind.")
+    .requiredOption("--api-key <value>", "LLM API key. Prefer local UI or prompt in later phases.")
+    .option("--base-url <url>", "Provider base URL.")
+    .option("--organization <id>", "Provider organization id.")
+    .option("--project <id>", "Provider project id.")
+    .option("--model <name>", "Default model.")
+    .option("--use-case <name>", "Use case label.", collectValues, [])
+    .option("--client <name>", "Client label.", collectValues, [])
+    .option("--display-name <name>", "Display name.")
+    .option("--replace", "Replace an existing profile.")
+    .option("--yes", "Confirm non-interactive write.")
+    .action(async (rawOptions: LlmAddCommandOptions) => {
+      const provider = normalizeLlmProvider(rawOptions.provider);
+      const inventory = createInventory(rawOptions.configDir, rawOptions.workspace, options.secretStore);
+      const result = await inventory.addProfile({
+        profileId: rawOptions.profile,
+        provider,
+        displayName: rawOptions.displayName,
+        useCases: rawOptions.useCase,
+        workspace: rawOptions.workspace ? path.resolve(rawOptions.workspace) : undefined,
+        secretValue: rawOptions.apiKey,
+        field: "api_key",
+        replace: Boolean(rawOptions.replace),
+        yes: Boolean(rawOptions.yes),
+        llm: {
+          baseUrl: rawOptions.baseUrl,
+          organization: rawOptions.organization,
+          project: rawOptions.project,
+          defaultModel: rawOptions.model,
+          clientLabels: rawOptions.client
+        }
+      });
+      writeOut(formatLlmChanged("added", result.profile));
+    });
+
+  llm
+    .command("list")
+    .description("List LLM key profiles without revealing API keys.")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .action((rawOptions: LlmListCommandOptions) => {
+      const inventory = createInventory(rawOptions.configDir, undefined, options.secretStore);
+      writeOut(formatLlmList(inventory.listProfiles().filter(isLlmProfile)));
+    });
+
+  llm
+    .command("use")
+    .description("Set the default LLM profile for a workspace, client, or use case.")
+    .argument("<profile>", "Profile id.")
+    .requiredOption("--workspace <path>", "Workspace path.")
+    .requiredOption("--provider <name>", "LLM provider.")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--client <name>", "Agent client override.")
+    .option("--use-case <name>", "Use case override.")
+    .option("--yes", "Confirm non-interactive write.")
+    .action((profile: string, rawOptions: LlmUseCommandOptions) => {
+      const provider = normalizeLlmProvider(rawOptions.provider);
+      const inventory = createInventory(rawOptions.configDir, rawOptions.workspace, options.secretStore);
+      const result = inventory.setDefaultProfile({
+        profileId: profile,
+        provider,
+        workspace: path.resolve(rawOptions.workspace),
+        client: rawOptions.client,
+        useCase: rawOptions.useCase,
+        yes: Boolean(rawOptions.yes)
+      });
+      writeOut(formatLlmChanged("selected", result));
+    });
+
+  llm
+    .command("resolve")
+    .description("Resolve the LLM profile for a workspace, client, and use case.")
+    .requiredOption("--workspace <path>", "Workspace path.")
+    .requiredOption("--provider <name>", "LLM provider.")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--client <name>", "Agent client.")
+    .option("--use-case <name>", "Use case.", "code-generation")
+    .action((rawOptions: LlmResolveCommandOptions) => {
+      const provider = normalizeLlmProvider(rawOptions.provider);
+      const inventory = createInventory(rawOptions.configDir, rawOptions.workspace, options.secretStore);
+      const profiles = inventory.listProfiles();
+      const result = resolveContext({
+        workspace: path.resolve(rawOptions.workspace),
+        config: {
+          profiles,
+          workspaces: readBindingsFromInventory(inventory)
+        },
+        adapters: [createLlmAdapter(provider, profiles)],
+        session: rawOptions.client ? { id: `cli:${rawOptions.client}`, client: rawOptions.client } : undefined,
+        execution: {
+          kind: "llm",
+          provider,
+          useCase: rawOptions.useCase
+        }
+      });
+      writeOut(formatLlmResolve(result));
+    });
+
   return program;
 }
 
@@ -232,6 +342,44 @@ interface SecretTestCommandOptions {
   field: string;
 }
 
+interface LlmAddCommandOptions {
+  profile: string;
+  provider: string;
+  configDir?: string;
+  workspace?: string;
+  apiKey: string;
+  baseUrl?: string;
+  organization?: string;
+  project?: string;
+  model?: string;
+  useCase: string[];
+  client: string[];
+  displayName?: string;
+  replace?: boolean;
+  yes?: boolean;
+}
+
+interface LlmListCommandOptions {
+  configDir?: string;
+}
+
+interface LlmUseCommandOptions {
+  workspace: string;
+  provider: string;
+  configDir?: string;
+  client?: string;
+  useCase?: string;
+  yes?: boolean;
+}
+
+interface LlmResolveCommandOptions {
+  workspace: string;
+  provider: string;
+  configDir?: string;
+  client?: string;
+  useCase: string;
+}
+
 function collectValues(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
@@ -263,6 +411,37 @@ function normalizeStatus(value: string): ProfileStatus {
     return value;
   }
   throw new Error(`Unsupported profile status: ${value}`);
+}
+
+function normalizeLlmProvider(value: string): string {
+  if (["openai", "anthropic", "gemini", "openrouter", "custom", "internal"].includes(value)) {
+    return value;
+  }
+  throw new Error(`Unsupported LLM provider: ${value}`);
+}
+
+function isLlmProfile(profile: ProfileMetadata): boolean {
+  return Boolean(profile.llm) || ["openai", "anthropic", "gemini", "openrouter", "custom", "internal"].includes(profile.provider);
+}
+
+function readBindingsFromInventory(inventory: ProfileInventory) {
+  return inventory.getBindings();
+}
+
+function createLlmAdapter(provider: string, profiles: ProfileMetadata[]): AdapterDefinition {
+  const useCases = [...new Set(profiles
+    .filter((profile) => profile.provider === provider)
+    .flatMap((profile) => profile.useCases ?? []))];
+  return {
+    provider,
+    capabilities: [{
+      id: `${provider}-default`,
+      type: "llm-api-key",
+      provider,
+      useCases: useCases.length > 0 ? useCases : undefined
+    }],
+    riskRules: [{ capability: `${provider}-default`, risk: "read" }]
+  };
 }
 
 function formatInitResult(result: ReturnType<typeof runScenarioInit>, dryRun: boolean): string {
@@ -327,4 +506,50 @@ function formatSecretList(profiles: Array<{
     );
   }
   return `${lines.join("\n")}\n`;
+}
+
+function formatLlmChanged(action: string, profile: ProfileMetadata): string {
+  return [
+    "TokenValve llm",
+    `- ${action}: ${profile.id}`,
+    `- provider: ${profile.provider}`,
+    `- status: ${profile.status ?? "unverified"}`,
+    `- model: ${profile.llm?.defaultModel ?? "not set"}`,
+    `- baseUrl: ${profile.llm?.baseUrl ?? "not set"}`,
+    "- api key: stored outside YAML and hidden from output"
+  ].join("\n") + "\n";
+}
+
+function formatLlmList(profiles: ProfileMetadata[]): string {
+  const lines = ["TokenValve llm profiles"];
+  if (profiles.length === 0) {
+    lines.push("- none");
+    return `${lines.join("\n")}\n`;
+  }
+
+  for (const profile of profiles) {
+    lines.push([
+      `- ${profile.id}`,
+      `provider=${profile.provider}`,
+      `status=${profile.status ?? "unverified"}`,
+      `model=${profile.llm?.defaultModel ?? "not-set"}`,
+      `baseUrl=${profile.llm?.baseUrl ?? "not-set"}`,
+      `useCases=${profile.useCases?.join(",") || "none"}`,
+      `clients=${profile.llm?.clientLabels?.join(",") || "none"}`,
+      `fingerprint=${profile.maskedFingerprint ?? "none"}`
+    ].join(" "));
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function formatLlmResolve(result: ReturnType<typeof resolveContext>): string {
+  return [
+    "TokenValve llm resolve",
+    `- decision: ${result.decision}`,
+    `- reason: ${result.reason}`,
+    `- provider: ${result.provider ?? "none"}`,
+    `- profile: ${result.profile ?? "none"}`,
+    `- capability: ${result.capability ?? "none"}`,
+    `- risk: ${result.risk ?? "none"}`
+  ].join("\n") + "\n";
 }

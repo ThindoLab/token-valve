@@ -105,6 +105,49 @@ describe("ProfileInventory", () => {
     await expect(store.readSecret(added.secretRef)).resolves.toBeNull();
   });
 
+  it("stores LLM metadata and client/use-case default bindings", async () => {
+    const { root, inventory } = makeInventory();
+    await inventory.addProfile({
+      profileId: "openai:work",
+      provider: "openai",
+      workspace: root,
+      secretValue: "sk_openai_secret",
+      field: "api_key",
+      useCases: ["code-generation"],
+      llm: {
+        baseUrl: "https://api.openai.com/v1",
+        defaultModel: "gpt-4.1",
+        clientLabels: ["codex"]
+      },
+      yes: true
+    });
+
+    inventory.setDefaultProfile({
+      profileId: "openai:work",
+      provider: "openai",
+      workspace: root,
+      client: "codex",
+      useCase: "code-generation",
+      yes: true
+    });
+
+    expect(inventory.listProfiles()[0]).toMatchObject({
+      id: "openai:work",
+      provider: "openai",
+      llm: {
+        baseUrl: "https://api.openai.com/v1",
+        defaultModel: "gpt-4.1",
+        clientLabels: ["codex"]
+      }
+    });
+    expect(inventory.getBindings()[0]?.providers.openai).toMatchObject({
+      profile: "openai:work",
+      clientProfiles: {
+        codex: "openai:work"
+      }
+    });
+  });
+
   it("rejects risky write paths without explicit confirmation", async () => {
     const { inventory } = makeInventory();
     await expect(inventory.addProfile({

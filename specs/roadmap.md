@@ -168,7 +168,7 @@
 - CLI 列表只显示脱敏状态。
 - 未验证 profile 不用于自动写操作。
 
-### Phase 8: LLM Key 管理 MVP
+### Phase 8: LLM Key 管理 MVP（已完成）
 
 交付物：多套 LLM API key 管理与默认绑定。
 

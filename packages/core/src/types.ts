@@ -36,6 +36,8 @@ export interface ProviderBinding {
   profile: string;
   environment?: string;
   capabilities?: Record<string, string>;
+  clientProfiles?: Record<string, string>;
+  capabilityProfiles?: Record<string, string>;
 }
 
 export interface AgentSessionContext {
@@ -57,6 +59,15 @@ export interface ProfileMetadata {
   createdAt?: string;
   updatedAt?: string;
   lastVerifiedAt?: string;
+  llm?: LlmProfileMetadata;
+}
+
+export interface LlmProfileMetadata {
+  baseUrl?: string;
+  organization?: string;
+  project?: string;
+  defaultModel?: string;
+  clientLabels?: string[];
 }
 
 export interface AdapterDefinition {

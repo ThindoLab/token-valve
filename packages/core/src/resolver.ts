@@ -39,7 +39,7 @@ export function resolveContext(input: ResolveInput): ResolveResult {
   const workspaceProviderBinding = binding.providers[provider];
   const sessionProviderBinding = input.session?.providers?.[provider];
   const usedSessionOverride = Boolean(sessionProviderBinding);
-  const providerBinding = sessionProviderBinding ?? workspaceProviderBinding;
+  const providerBinding = selectProviderBinding(sessionProviderBinding ?? workspaceProviderBinding, input.execution, input.session?.client);
   const adapter = adapters.find((candidate) => candidate.provider === provider);
   if (!adapter) {
     return blocked("provider_not_configured", `Adapter is not configured for provider: ${provider}.`, {
@@ -184,6 +184,20 @@ function inferProvider(execution: ExecutionContext, adapters: AdapterDefinition[
 
 function findProfile(profiles: ProfileMetadata[], profileId: string, provider: string): ProfileMetadata | undefined {
   return profiles.find((profile) => profile.id === profileId && profile.provider === provider);
+}
+
+function selectProviderBinding(binding: ProviderBinding, execution: ExecutionContext, client?: string): ProviderBinding {
+  if (execution.kind !== "llm") {
+    return binding;
+  }
+
+  const clientProfile = client ? binding.clientProfiles?.[client] : undefined;
+  const capabilityProfile = execution.useCase ? binding.capabilityProfiles?.[execution.useCase] : undefined;
+  const selectedProfile = clientProfile ?? capabilityProfile ?? binding.profile;
+  return {
+    ...binding,
+    profile: selectedProfile
+  };
 }
 
 function findCapability(
