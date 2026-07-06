@@ -2,21 +2,27 @@ import { Command } from "commander";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import {
+  CustomProviderStore,
   getCoreHealth,
   HumanIntentStore,
   runCurlTemplate,
+  customProvidersToAdapters,
+  findCustomHttpTemplate,
+  findCustomScriptTemplate,
   runGitSsh,
   MacOSKeychainSecretStore,
   ProfileInventory,
   RecipeStore,
   runGitHubCli,
   runHttpRequest,
+  runScriptCommand,
   runSshCommand,
   runSupabaseCli,
   runVercelCli,
   resolveContext,
   runScenarioInit,
   type AdapterDefinition,
+  type CustomProviderMapping,
   type HttpRunner,
   type KnownHostsPolicy,
   type ProcessRunner,
@@ -488,22 +494,22 @@ export function createCli(options: CliOptions = {}): Command {
     .option("--body <body>", "Request body.")
     .action(async (rawOptions: HttpRequestCommandOptions) => {
       const inventory = createInventory(rawOptions.configDir, rawOptions.workspace, options.secretStore);
+      const customProviders = createCustomProviderStore(rawOptions.configDir, rawOptions.workspace).list();
+      const customTemplate = findCustomHttpTemplate(customProviders, rawOptions.provider, rawOptions.capability);
       const result = await runHttpRequest({
         workspace: path.resolve(rawOptions.workspace),
         config: {
           profiles: inventory.listProfiles(),
           workspaces: inventory.getBindings()
         },
-        adapters: [createHttpCliAdapter(rawOptions.provider, rawOptions.capability)],
+        adapters: customTemplate ? customProvidersToAdapters(customProviders) : [createHttpCliAdapter(rawOptions.provider, rawOptions.capability)],
         secretStore: options.secretStore ?? new MacOSKeychainSecretStore(),
         provider: rawOptions.provider,
         method: rawOptions.method,
         url: rawOptions.url,
         headers: parseHeaders(rawOptions.header),
         body: rawOptions.body,
-        secretTemplates: {
-          headers: parseHeaders(rawOptions.secretHeader)
-        },
+        secretTemplates: mergeHttpTemplates(customTemplate, { headers: parseHeaders(rawOptions.secretHeader) }),
         runner: options.httpRunner
       });
       writeOut(formatHttpRun(result));
@@ -682,6 +688,113 @@ export function createCli(options: CliOptions = {}): Command {
         } : undefined
       });
       writeOut(formatVercelRun(result));
+    });
+
+  const custom = program
+    .command("custom")
+    .description("Manage data-driven custom provider mappings.");
+
+  custom
+    .command("add-http")
+    .description("Add a custom HTTP provider capability mapping.")
+    .requiredOption("--provider <name>", "Custom provider name.")
+    .requiredOption("--capability <id>", "Capability id.")
+    .requiredOption("--host <host>", "Allowed host.", collectValues)
+    .option("--path-prefix <prefix>", "Allowed path prefix.", collectValues, ["/"])
+    .option("--method <method>", "Allowed HTTP method.", collectValues, ["GET"])
+    .option("--risk <risk>", "Risk level.", "read")
+    .option("--secret-field <field>", "Secret field to render.", "token")
+    .option("--secret-header <header>", "Secret template header as Name: Bearer {{token}}.", collectValues, [])
+    .option("--secret-query <query>", "Secret template query as name={{token}}.", collectValues, [])
+    .option("--secret-body <body>", "Secret template body.")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--workspace <path>", "Workspace path used to locate the default config directory.")
+    .action((rawOptions: CustomAddHttpCommandOptions) => {
+      const mapping = createCustomProviderStore(rawOptions.configDir, rawOptions.workspace).saveHttpMapping({
+        provider: rawOptions.provider,
+        capability: rawOptions.capability,
+        allowedHosts: rawOptions.host,
+        pathPrefixes: rawOptions.pathPrefix,
+        methods: rawOptions.method,
+        secretField: rawOptions.secretField,
+        headers: parseHeaders(rawOptions.secretHeader),
+        query: parseAssignments(rawOptions.secretQuery),
+        body: rawOptions.secretBody,
+        riskRules: buildCustomRiskRules(rawOptions.capability, rawOptions.risk, rawOptions.method, rawOptions.pathPrefix)
+      });
+      writeOut(formatCustomMappingSaved(rawOptions.provider, mapping.id, mapping.type));
+    });
+
+  custom
+    .command("add-script")
+    .description("Add a custom script provider capability mapping.")
+    .requiredOption("--provider <name>", "Custom provider name.")
+    .requiredOption("--capability <id>", "Capability id.")
+    .requiredOption("--script <path>", "Allowed script path.", collectValues)
+    .option("--env <assignment>", "Secret env template as NAME={{token}}.", collectValues, [])
+    .option("--risk <risk>", "Risk level.", "read")
+    .option("--secret-field <field>", "Secret field to render.", "token")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--workspace <path>", "Workspace path used to locate the default config directory.")
+    .action((rawOptions: CustomAddScriptCommandOptions) => {
+      const mapping = createCustomProviderStore(rawOptions.configDir, rawOptions.workspace).saveScriptMapping({
+        provider: rawOptions.provider,
+        capability: rawOptions.capability,
+        scripts: rawOptions.script.map((script) => path.resolve(script)),
+        secretField: rawOptions.secretField,
+        env: parseAssignments(rawOptions.env),
+        riskRules: rawOptions.script.map((script) => ({
+          capability: rawOptions.capability,
+          match: [path.resolve(script)],
+          risk: normalizeRisk(rawOptions.risk)
+        }))
+      });
+      writeOut(formatCustomMappingSaved(rawOptions.provider, mapping.id, mapping.type));
+    });
+
+  custom
+    .command("list")
+    .description("List custom provider mappings.")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--workspace <path>", "Workspace path used to locate the default config directory.")
+    .action((rawOptions: CustomListCommandOptions) => {
+      writeOut(formatCustomProviderList(createCustomProviderStore(rawOptions.configDir, rawOptions.workspace).list()));
+    });
+
+  const customScript = custom
+    .command("script")
+    .description("Run custom provider script capabilities.");
+
+  customScript
+    .command("run")
+    .description("Run an allowlisted custom script with mapped secret env.")
+    .requiredOption("--workspace <path>", "Workspace path.")
+    .requiredOption("--provider <name>", "Custom provider name.")
+    .requiredOption("--capability <id>", "Capability id.")
+    .requiredOption("--script <path>", "Script path.")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .allowUnknownOption(true)
+    .argument("[args...]", "Script arguments after --.")
+    .action(async (args: string[], rawOptions: CustomScriptRunCommandOptions) => {
+      const inventory = createInventory(rawOptions.configDir, rawOptions.workspace, options.secretStore);
+      const customProviders = createCustomProviderStore(rawOptions.configDir, rawOptions.workspace).list();
+      const template = findCustomScriptTemplate(customProviders, rawOptions.provider, rawOptions.capability);
+      const result = await runScriptCommand({
+        workspace: path.resolve(rawOptions.workspace),
+        config: {
+          profiles: inventory.listProfiles(),
+          workspaces: inventory.getBindings()
+        },
+        adapters: customProvidersToAdapters(customProviders),
+        secretStore: options.secretStore ?? new MacOSKeychainSecretStore(),
+        provider: rawOptions.provider,
+        script: path.resolve(rawOptions.script),
+        args: normalizeOptionalPassthroughArgs(args),
+        secretField: template?.field,
+        envTemplates: template?.env,
+        runner: options.processRunner
+      });
+      writeOut(formatScriptRun(result));
     });
 
   return program;
@@ -886,7 +999,46 @@ interface VercelRunCommandOptions {
   environment?: string;
 }
 
-function collectValues(value: string, previous: string[]): string[] {
+interface CustomAddHttpCommandOptions {
+  provider: string;
+  capability: string;
+  host: string[];
+  pathPrefix: string[];
+  method: string[];
+  risk: string;
+  secretField: string;
+  secretHeader: string[];
+  secretQuery: string[];
+  secretBody?: string;
+  configDir?: string;
+  workspace?: string;
+}
+
+interface CustomAddScriptCommandOptions {
+  provider: string;
+  capability: string;
+  script: string[];
+  env: string[];
+  risk: string;
+  secretField: string;
+  configDir?: string;
+  workspace?: string;
+}
+
+interface CustomListCommandOptions {
+  configDir?: string;
+  workspace?: string;
+}
+
+interface CustomScriptRunCommandOptions {
+  workspace: string;
+  provider: string;
+  capability: string;
+  script: string;
+  configDir?: string;
+}
+
+function collectValues(value: string, previous: string[] = []): string[] {
   return [...previous, value];
 }
 
@@ -928,6 +1080,12 @@ function createIntentStore(configDir: string | undefined, workspace: string | un
 
 function createRecipeStore(configDir: string | undefined, workspace: string | undefined): RecipeStore {
   return new RecipeStore({
+    configDir: resolveConfigDir(configDir, workspace)
+  });
+}
+
+function createCustomProviderStore(configDir: string | undefined, workspace: string | undefined): CustomProviderStore {
+  return new CustomProviderStore({
     configDir: resolveConfigDir(configDir, workspace)
   });
 }
@@ -1077,6 +1235,38 @@ function parseHeaders(values: string[]): Record<string, string> {
     }
     return [value.slice(0, separator).trim(), value.slice(separator + 1).trim()];
   }));
+}
+
+function parseAssignments(values: string[]): Record<string, string> {
+  return Object.fromEntries(values.map((value) => {
+    const separator = value.indexOf("=");
+    if (separator <= 0) {
+      throw new Error(`Assignment must be formatted as name=value: ${value}`);
+    }
+    return [value.slice(0, separator).trim(), value.slice(separator + 1).trim()];
+  }));
+}
+
+function mergeHttpTemplates(
+  left: { field?: string; headers?: Record<string, string>; query?: Record<string, string>; body?: unknown } | undefined,
+  right: { field?: string; headers?: Record<string, string>; query?: Record<string, string>; body?: unknown }
+) {
+  return {
+    field: right.field ?? left?.field,
+    headers: { ...(left?.headers ?? {}), ...(right.headers ?? {}) },
+    query: { ...(left?.query ?? {}), ...(right.query ?? {}) },
+    body: right.body ?? left?.body
+  };
+}
+
+function buildCustomRiskRules(capability: string, risk: string, methods: string[], pathPrefixes: string[]) {
+  const normalizedRisk = normalizeRisk(risk);
+  return methods.flatMap((method) => pathPrefixes.map((pathPrefix) => ({
+    capability,
+    method: method.toUpperCase(),
+    pathPrefix,
+    risk: normalizedRisk
+  })));
 }
 
 function formatInitResult(result: ReturnType<typeof runScenarioInit>, dryRun: boolean): string {
@@ -1352,6 +1542,51 @@ function formatCurlRun(result: Awaited<ReturnType<typeof runCurlTemplate>>): str
   }
   if (result.stderr) {
     lines.push("", "stderr:", result.stderr.replace(/\n$/, ""));
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function formatScriptRun(result: Awaited<ReturnType<typeof runScriptCommand>>): string {
+  const lines = [
+    "TokenValve custom script",
+    `- decision: ${result.resolve.decision}`,
+    `- reason: ${result.resolve.reason}`,
+    `- provider: ${result.resolve.provider ?? "none"}`,
+    `- profile: ${result.resolve.profile ?? "none"}`,
+    `- risk: ${result.resolve.risk ?? "none"}`,
+    `- executed: ${result.executed ? "yes" : "no"}`,
+    `- exitCode: ${result.exitCode}`
+  ];
+  if (result.stdout) {
+    lines.push("", "stdout:", result.stdout.replace(/\n$/, ""));
+  }
+  if (result.stderr) {
+    lines.push("", "stderr:", result.stderr.replace(/\n$/, ""));
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function formatCustomMappingSaved(provider: string, capability: string, type: string): string {
+  return [
+    "TokenValve custom provider",
+    `- provider: ${provider}`,
+    `- capability: ${capability}`,
+    `- type: ${type}`,
+    "- saved: yes",
+    "- plaintext secret: not stored"
+  ].join("\n") + "\n";
+}
+
+function formatCustomProviderList(providers: CustomProviderMapping[]): string {
+  if (providers.length === 0) {
+    return "TokenValve custom providers\n- none configured\n";
+  }
+  const lines = ["TokenValve custom providers"];
+  for (const provider of providers) {
+    lines.push(`- ${provider.provider}`);
+    for (const capability of provider.capabilities) {
+      lines.push(`  - ${capability.id}: ${capability.type}, riskRules=${capability.riskRules.length}`);
+    }
   }
   return `${lines.join("\n")}\n`;
 }

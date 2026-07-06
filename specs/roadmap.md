@@ -392,7 +392,7 @@
 - 验证失败不会产生 verified Recipe。
 - Skill 生成的配置可被下一次 Agent 执行复用。
 
-### Phase 19: Custom Provider MVP
+### Phase 19: Custom Provider MVP（已完成）
 
 交付物：数据驱动 custom provider mapping。
 

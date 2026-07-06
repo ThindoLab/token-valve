@@ -23,6 +23,7 @@ class FakeProcessRunner implements ProcessRunner {
       ?? input.env.VERCEL_TOKEN
       ?? input.env.SSH_AUTH_SOCK
       ?? input.env.GIT_SSH_COMMAND
+      ?? input.env.INTERNAL_TOKEN
       ?? "";
     return {
       stdout: `ok ${token || input.args.join(" ")}`,
@@ -629,6 +630,151 @@ describe("tokenvalve cli", () => {
       "--header",
       `Authorization: Bearer ${token}`
     ]);
+  });
+
+  it("uses custom provider HTTP mappings with secret templates", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "tokenvalve-cli-custom-http-"));
+    const configDir = path.join(workspace, ".tokenvalve");
+    const store = new MemorySecretStore();
+    const runner = new FakeHttpRunner();
+    const token = "custom_http_secret_1234567890";
+
+    await runCli([
+      "secret",
+      "add",
+      "--config-dir",
+      configDir,
+      "--workspace",
+      workspace,
+      "--profile",
+      "internal-api:default",
+      "--provider",
+      "internal-api",
+      "--environment",
+      "development",
+      "--secret-value",
+      token,
+      "--yes"
+    ], { secretStore: store });
+
+    const saved = await runCli([
+      "custom",
+      "add-http",
+      "--config-dir",
+      configDir,
+      "--provider",
+      "internal-api",
+      "--capability",
+      "internal-status",
+      "--host",
+      "internal.example.test",
+      "--path-prefix",
+      "/status",
+      "--method",
+      "GET",
+      "--secret-header",
+      "Authorization: Bearer {{token}}",
+      "--risk",
+      "read"
+    ]);
+    const output = await runCli([
+      "http",
+      "request",
+      "--workspace",
+      workspace,
+      "--config-dir",
+      configDir,
+      "--provider",
+      "internal-api",
+      "--capability",
+      "internal-status",
+      "--method",
+      "GET",
+      "--url",
+      "https://internal.example.test/status/health"
+    ], { secretStore: store, httpRunner: runner });
+
+    expect(saved).toContain("plaintext secret: not stored");
+    expect(output).toContain("decision: allow");
+    expect(output).toContain("provider: internal-api");
+    expect(output).not.toContain(token);
+    expect(runner.calls[0]).toMatchObject({
+      method: "GET",
+      url: "https://internal.example.test/status/health",
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+  });
+
+  it("runs custom script mappings with child-scoped env secrets", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "tokenvalve-cli-custom-script-"));
+    const configDir = path.join(workspace, ".tokenvalve");
+    const store = new MemorySecretStore();
+    const runner = new FakeProcessRunner();
+    const script = path.join(workspace, "internal-tool");
+    const token = "custom_script_secret_1234567890";
+
+    await runCli([
+      "secret",
+      "add",
+      "--config-dir",
+      configDir,
+      "--workspace",
+      workspace,
+      "--profile",
+      "internal-tool:default",
+      "--provider",
+      "internal-tool",
+      "--environment",
+      "development",
+      "--secret-value",
+      token,
+      "--yes"
+    ], { secretStore: store });
+
+    await runCli([
+      "custom",
+      "add-script",
+      "--config-dir",
+      configDir,
+      "--provider",
+      "internal-tool",
+      "--capability",
+      "internal-script",
+      "--script",
+      script,
+      "--env",
+      "INTERNAL_TOKEN={{token}}",
+      "--risk",
+      "read"
+    ]);
+
+    const before = process.env.INTERNAL_TOKEN;
+    const output = await runCli([
+      "custom",
+      "script",
+      "run",
+      "--workspace",
+      workspace,
+      "--config-dir",
+      configDir,
+      "--provider",
+      "internal-tool",
+      "--capability",
+      "internal-script",
+      "--script",
+      script
+    ], { secretStore: store, processRunner: runner });
+
+    expect(output).toContain("TokenValve custom script");
+    expect(output).toContain("decision: allow");
+    expect(output).not.toContain(token);
+    expect(runner.calls[0]).toMatchObject({
+      command: script,
+      env: { INTERNAL_TOKEN: token }
+    });
+    expect(process.env.INTERNAL_TOKEN).toBe(before);
   });
 
   it("prints SSH command help", async () => {

@@ -28,3 +28,5 @@ export * from "./ssh-runner.js";
 export * from "./vercel-runner.js";
 export * from "./human-intent.js";
 export * from "./recipe-store.js";
+export * from "./custom-provider.js";
+export * from "./script-runner.js";
