@@ -94,6 +94,15 @@ node packages/cli/dist/index.js dashboard \
   --config-dir "$PWD/.tokenvalve"
 ```
 
+Open the local Web key manager:
+
+```bash
+node packages/cli/dist/index.js dashboard web \
+  --workspace "$PWD" \
+  --config-dir "$PWD/.tokenvalve" \
+  --port 4777
+```
+
 Run doctor when something fails:
 
 ```bash

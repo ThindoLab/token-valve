@@ -96,6 +96,15 @@ node packages/cli/dist/index.js dashboard \
   --config-dir "$PWD/.tokenvalve"
 ```
 
+打开本地 Web 密钥管理器：
+
+```bash
+node packages/cli/dist/index.js dashboard web \
+  --workspace "$PWD" \
+  --config-dir "$PWD/.tokenvalve" \
+  --port 4777
+```
+
 遇到配置或执行问题时运行 doctor：
 
 ```bash

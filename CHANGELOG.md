@@ -2,6 +2,7 @@
 
 ## 2026-07-06
 
+- Added a local Web UI for the dashboard/key manager with `tokenvalve dashboard web`, a Chinese browser interface, redacted snapshot API, and safe default-profile switching.
 - Added bilingual README support with Chinese as the default and English available in `README.en.md`.
 - Added the Phase 23 Public MVP documentation set with install instructions, quick start, provider examples, MCP/Skill onboarding guidance, Recipe examples, threat model, known limitations, and backlog.
 - Added the Phase 23 feature spec covering Public MVP requirements, implementation plan, and validation checklist.

@@ -1,11 +1,10 @@
 import { Command } from "commander";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { renderDashboard, renderDashboardUseResult } from "@tokenvalve/dashboard";
+import { renderDashboard, renderDashboardUseResult, startDashboardWebServer } from "@tokenvalve/dashboard";
 import {
   CustomProviderStore,
   formatDoctorResult,
-  getCoreHealth,
   HumanIntentStore,
   runCurlTemplate,
   customProvidersToAdapters,
@@ -79,20 +78,7 @@ export function createCli(options: CliOptions = {}): Command {
     .option("--config-dir <path>", "TokenValve config directory.")
     .action((rawOptions: DashboardCommandOptions) => {
       const workspace = path.resolve(rawOptions.workspace);
-      const inventory = createInventory(rawOptions.configDir, workspace, options.secretStore);
-      writeOut(renderDashboard({
-        workspace,
-        profiles: inventory.listProfiles(),
-        bindings: inventory.getBindings(),
-        intents: readActiveIntents(rawOptions.configDir, workspace),
-        recipes: createRecipeStore(rawOptions.configDir, workspace).list(),
-        customProviders: createCustomProviderStore(rawOptions.configDir, workspace).list(),
-        doctor: getCoreHealth(),
-        audits: {
-          available: false,
-          summary: []
-        }
-      }));
+      writeOut(renderDashboard(loadDashboardSnapshot(workspace, resolveConfigDir(rawOptions.configDir, workspace), options.secretStore)));
     });
 
   dashboard
@@ -117,6 +103,34 @@ export function createCli(options: CliOptions = {}): Command {
         profile: profile.id,
         environment: profile.environment
       }));
+    });
+
+  dashboard
+    .command("web")
+    .description("Start the local TokenValve Web UI.")
+    .option("--workspace <path>", "Workspace path.", process.cwd())
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--host <host>", "Host to bind.", "127.0.0.1")
+    .option("--port <number>", "Port to bind.", parseInteger, 4777)
+    .action(async (rawOptions: DashboardWebCommandOptions) => {
+      const workspace = path.resolve(rawOptions.workspace);
+      const configDir = resolveConfigDir(rawOptions.configDir, workspace);
+      const server = await startDashboardWebServer({
+        host: rawOptions.host,
+        port: rawOptions.port,
+        loadSnapshot: () => loadDashboardSnapshot(workspace, configDir, options.secretStore),
+        switchDefaultProfile: (input) => {
+          const inventory = createInventory(configDir, workspace, options.secretStore);
+          const profile = inventory.setDefaultProfile({
+            profileId: input.profile,
+            provider: input.provider,
+            workspace: path.resolve(input.workspace || workspace),
+            yes: true
+          });
+          return { profile: profile.id, environment: profile.environment };
+        }
+      });
+      writeOut(`TokenValve Web UI\n- url: ${server.url}\n- workspace: ${workspace}\n- configDir: ${configDir}\n`);
     });
 
   program
@@ -900,6 +914,13 @@ interface DashboardUseCommandOptions {
   yes?: boolean;
 }
 
+interface DashboardWebCommandOptions {
+  workspace: string;
+  configDir?: string;
+  host: string;
+  port: number;
+}
+
 interface SecretAddCommandOptions {
   profile: string;
   provider: string;
@@ -1161,6 +1182,27 @@ function createCustomProviderStore(configDir: string | undefined, workspace: str
   return new CustomProviderStore({
     configDir: resolveConfigDir(configDir, workspace)
   });
+}
+
+function loadDashboardSnapshot(workspace: string, configDir: string, secretStore: SecretStore | undefined) {
+  const inventory = createInventory(configDir, workspace, secretStore);
+  const doctor = runDoctor({ workspace, configDir });
+  return {
+    workspace,
+    profiles: inventory.listProfiles(),
+    bindings: inventory.getBindings(),
+    intents: readActiveIntents(configDir, workspace),
+    recipes: createRecipeStore(configDir, workspace).list(),
+    customProviders: createCustomProviderStore(configDir, workspace).list(),
+    doctor: {
+      status: doctor.status,
+      message: doctor.findings[0]?.message ?? "No blocking TokenValve issues detected."
+    },
+    audits: {
+      available: false,
+      summary: []
+    }
+  };
 }
 
 function resolveConfigDir(configDir: string | undefined, workspace: string | undefined): string {

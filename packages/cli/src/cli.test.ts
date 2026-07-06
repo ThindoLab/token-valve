@@ -255,6 +255,14 @@ describe("tokenvalve cli", () => {
     expect(after).not.toContain("copy secret");
   });
 
+  it("prints local web dashboard help", async () => {
+    const output = await runCli(["dashboard", "web", "--help"]);
+
+    expect(output).toContain("Start the local TokenValve Web UI");
+    expect(output).toContain("--host <host>");
+    expect(output).toContain("--port <number>");
+  });
+
   it("creates and revokes human intent grants without printing secrets", async () => {
     const workspace = mkdtempSync(path.join(tmpdir(), "tokenvalve-cli-intent-"));
     const configDir = path.join(workspace, ".tokenvalve");
