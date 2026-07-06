@@ -371,7 +371,7 @@
 - Recipe 复测失败后状态变为 stale/failed。
 - 相同 workspace/capability 可基于 verified Recipe 自动解析 profile。
 
-### Phase 18: Skill 编排 MVP
+### Phase 18: Skill 编排 MVP（已完成）
 
 交付物：内置 TokenValve Skill 编排流程。
 

@@ -22,6 +22,7 @@ import {
   type ProcessRunner,
   type ProfileMetadata,
   type RecipeBinding,
+  type RecipeStatus,
   type RiskLevel,
   type SecretStore,
   type TokenValveConfig
@@ -89,7 +90,7 @@ interface PendingIntentRequest {
 
 interface RecipeMetadata {
   id: string;
-  status: "draft";
+  status: RecipeStatus;
   provider?: string;
   profile?: string;
   capability?: string;
@@ -332,14 +333,17 @@ export class TokenValveMcpServer {
       const recipe = new RecipeStore({ configDir: this.configDir }).save({
         id: requireString(input.id, "id"),
         binding,
+        status: optionalRecipeStatus(input.status),
         riskRules: Array.isArray(input.riskRules) ? input.riskRules as never : undefined,
-        validationSteps: Array.isArray(input.validationSteps) ? input.validationSteps as never : undefined
+        validationSteps: Array.isArray(input.validationSteps) ? input.validationSteps as never : undefined,
+        validationResults: Array.isArray(input.validationResults) ? input.validationResults as never : undefined
       });
       return { ok: true, data: { recipe } };
     }
+    const status = optionalRecipeStatus(input.status) ?? "draft";
     const recipe: RecipeMetadata = {
       id: requireString(input.id, "id"),
-      status: "draft",
+      status,
       provider: binding.provider,
       profile: binding.profile,
       capability: binding.capability,
@@ -363,6 +367,16 @@ export class TokenValveMcpServer {
       workspaces: inventory.getBindings()
     };
   }
+}
+
+function optionalRecipeStatus(value: unknown): RecipeStatus | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === "draft" || value === "verified" || value === "failed" || value === "stale" || value === "disabled") {
+    return value;
+  }
+  throw new Error(`Unsupported recipe status: ${String(value)}.`);
 }
 
 export function getMcpServerStatus(): string {

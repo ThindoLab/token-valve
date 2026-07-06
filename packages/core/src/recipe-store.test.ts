@@ -48,6 +48,33 @@ describe("RecipeStore", () => {
     expect(readFileSync(filePath, "utf8")).not.toMatch(/secretValue|apiKey|privateKey|ghp_/i);
   });
 
+  it("saves verified recipes with redacted validation results", () => {
+    const configDir = mkdtempSync(path.join(tmpdir(), "tokenvalve-recipes-verified-"));
+    const store = new RecipeStore({ configDir, now: () => new Date("2026-07-06T00:00:00.000Z") });
+    const recipe = store.save({
+      id: "github-repo-view",
+      status: "verified",
+      binding: {
+        workspace: WORKSPACE,
+        provider: "github",
+        profile: "github:work",
+        environment: "development",
+        capability: "github-cli"
+      },
+      validationResults: [{
+        status: "passed",
+        checkedAt: "2026-07-06T01:00:00.000Z",
+        message: "Account read succeeded."
+      }]
+    });
+
+    expect(recipe).toMatchObject({
+      status: "verified",
+      lastVerifiedAt: "2026-07-06T01:00:00.000Z",
+      validationResults: [{ status: "passed", message: "Account read succeeded." }]
+    });
+  });
+
   it("rejects secret-like fields and values", () => {
     const store = new RecipeStore({ configDir: mkdtempSync(path.join(tmpdir(), "tokenvalve-recipes-secret-")) });
     expect(() => store.save({
@@ -59,6 +86,21 @@ describe("RecipeStore", () => {
         capability: "github-cli"
       },
       validationSteps: [{ id: "bad", description: "bad", command: ["gh", "auth", "token=ghp_secret_value_1234567890"] }]
+    })).toThrow(/must not contain secret-like/);
+    expect(() => store.save({
+      id: "bad-result",
+      status: "verified",
+      binding: {
+        workspace: WORKSPACE,
+        provider: "github",
+        profile: "github:work",
+        capability: "github-cli"
+      },
+      validationResults: [{
+        status: "passed",
+        checkedAt: "2026-07-06T00:00:00.000Z",
+        message: "Bearer ghp_secret_value_1234567890"
+      }]
     })).toThrow(/must not contain secret-like/);
   });
 

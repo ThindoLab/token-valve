@@ -287,6 +287,7 @@ describe("TokenValveMcpServer", () => {
     const server = new TokenValveMcpServer({ configDir, config: makeConfig() });
     const saved = await server.callTool("recipe_save", {
       id: "github-repo-view",
+      status: "verified",
       binding: {
         workspace: WORKSPACE,
         provider: "github",
@@ -294,11 +295,22 @@ describe("TokenValveMcpServer", () => {
         environment: "development",
         capability: "github-cli"
       },
-      riskRules: [{ capability: "github-cli", match: ["repo", "view"], risk: "read" }]
+      riskRules: [{ capability: "github-cli", match: ["repo", "view"], risk: "read" }],
+      validationResults: [{
+        status: "passed",
+        checkedAt: "2026-07-06T00:00:00.000Z",
+        message: "Account read succeeded."
+      }]
     });
     const listed = await server.callTool("recipe_list");
 
     expect(saved.ok).toBe(true);
+    expect(saved.data).toMatchObject({
+      recipe: {
+        status: "verified",
+        lastVerifiedAt: "2026-07-06T00:00:00.000Z"
+      }
+    });
     expect(listed.ok).toBe(true);
     expect(JSON.stringify(listed.data)).toContain("github-repo-view");
     expect(readFileSync(path.join(configDir, "recipes.yaml"), "utf8")).not.toMatch(/secretValue|apiKey|privateKey|ghp_/i);

@@ -2,6 +2,8 @@
 
 ## 2026-07-06
 
+- Added the Phase 18 Skill Orchestration MVP with provider onboarding plans, safe MCP call drafts, local-only credential guidance, verification-gated recipe saving, and secret-like input rejection.
+- Added the Phase 18 feature spec covering Skill orchestration requirements, implementation plan, and validation checklist.
 - Added the Phase 17 Recipe / Playbook MVP with persistent recipe schema/store, metadata validation, verified/stale/failed status handling, CLI recipe commands, and MCP recipe persistence.
 - Added the Phase 17 feature spec covering Recipe / Playbook requirements, implementation plan, and validation checklist.
 - Added the Phase 16 MCP Server MVP with a safe tool registry, context/profile tools, structured execution tools, pending-only intent requests, metadata-only onboarding, and audit listing.

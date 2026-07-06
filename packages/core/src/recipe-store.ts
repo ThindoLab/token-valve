@@ -51,6 +51,7 @@ export interface SaveRecipeInput {
   binding: RecipeBinding;
   riskRules?: RiskRule[];
   validationSteps?: RecipeValidationStep[];
+  validationResults?: RecipeValidationResult[];
   status?: RecipeStatus;
 }
 
@@ -86,10 +87,10 @@ export class RecipeStore {
       },
       riskRules: input.riskRules ?? existing?.riskRules ?? [],
       validationSteps: input.validationSteps ?? existing?.validationSteps ?? [],
-      validationResults: existing?.validationResults,
+      validationResults: input.validationResults ?? existing?.validationResults,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
-      lastVerifiedAt: existing?.lastVerifiedAt
+      lastVerifiedAt: lastVerifiedAt(input.validationResults, input.status, existing?.lastVerifiedAt, now)
     };
     upsertRecipe(files, recipe);
     this.writeFiles(files);
@@ -135,6 +136,17 @@ export class RecipeStore {
     mkdirSync(this.configDir, { recursive: true });
     writeFileSync(path.join(this.configDir, "recipes.yaml"), stringify(files), "utf8");
   }
+}
+
+function lastVerifiedAt(results: RecipeValidationResult[] | undefined, status: RecipeStatus | undefined, existing: string | undefined, now: string): string | undefined {
+  const passed = [...(results ?? [])].reverse().find((result) => result.status === "passed");
+  if (passed) {
+    return passed.checkedAt;
+  }
+  if (status === "verified") {
+    return existing ?? now;
+  }
+  return existing;
 }
 
 export function assertNoSecretLikeValue(value: unknown): void {
