@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -128,6 +128,50 @@ describe("tokenvalve cli", () => {
     expect(output).toContain("dry-run: no files written");
     expect(output).toContain("GitHub repo view: allow");
     expect(existsSync(configDir)).toBe(false);
+  });
+
+  it("creates and revokes human intent grants without printing secrets", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "tokenvalve-cli-intent-"));
+    const configDir = path.join(workspace, ".tokenvalve");
+
+    const useOutput = await runCli([
+      "use",
+      "--config-dir",
+      configDir,
+      "--workspace",
+      workspace,
+      "--provider",
+      "vercel",
+      "--profile",
+      "vercel:team",
+      "--environment",
+      "production",
+      "--risk",
+      "production_deploy",
+      "--ttl",
+      "5m",
+      "--yes"
+    ]);
+
+    expect(useOutput).toContain("TokenValve human intent");
+    expect(useOutput).toContain("created: intent_");
+    expect(useOutput).toContain("provider: vercel");
+    expect(useOutput).toContain("risk: production_deploy");
+    const intentId = useOutput.match(/created: (intent_[^\n]+)/)?.[1];
+    expect(intentId).toMatch(/^intent_/);
+    expect(readFileSync(path.join(configDir, "intents.yaml"), "utf8")).not.toMatch(/secret-value|api-key/i);
+
+    const revokeOutput = await runCli([
+      "revoke",
+      intentId ?? "",
+      "--config-dir",
+      configDir,
+      "--yes"
+    ]);
+    expect(revokeOutput).toContain(`revoked: ${intentId}`);
+    const revoked = readFileSync(path.join(configDir, "intents.yaml"), "utf8");
+    expect(revoked).toContain(`id: ${intentId}`);
+    expect(revoked).toContain("status: revoked");
   });
 
   it("manages secret profiles without printing secret values", async () => {

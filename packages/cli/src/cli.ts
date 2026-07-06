@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   getCoreHealth,
+  HumanIntentStore,
   runCurlTemplate,
   runGitSsh,
   MacOSKeychainSecretStore,
@@ -20,6 +21,7 @@ import {
   type ProcessRunner,
   type ProfileMetadata,
   type ProfileStatus,
+  type RiskLevel,
   type SecretStore,
   type SupportedInitProvider
 } from "@tokenvalve/core";
@@ -54,6 +56,47 @@ export function createCli(options: CliOptions = {}): Command {
           "- real resolver, secret store, MCP tools, shims, and dashboard diagnostics are implemented in later phases"
         ].join("\n") + "\n"
       );
+    });
+
+  program
+    .command("use")
+    .description("Create a TTL-bound local human intent grant.")
+    .requiredOption("--workspace <path>", "Workspace path.")
+    .requiredOption("--provider <name>", "Provider name.")
+    .requiredOption("--profile <id>", "Profile id.")
+    .requiredOption("--environment <name>", "Environment name.")
+    .requiredOption("--risk <risk>", "Risk to authorize.")
+    .requiredOption("--ttl <duration>", "TTL such as 30s, 10m, or 2h.")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--yes", "Confirm non-interactive authorization.")
+    .action((rawOptions: UseCommandOptions) => {
+      const store = createIntentStore(rawOptions.configDir, rawOptions.workspace);
+      const result = store.create({
+        workspace: path.resolve(rawOptions.workspace),
+        provider: rawOptions.provider,
+        profile: rawOptions.profile,
+        environment: rawOptions.environment,
+        risk: normalizeRisk(rawOptions.risk),
+        ttl: rawOptions.ttl,
+        yes: Boolean(rawOptions.yes)
+      });
+      writeOut(formatIntentChanged("created", result.intent));
+    });
+
+  program
+    .command("revoke")
+    .description("Revoke a local human intent grant.")
+    .argument("<intent>", "Human intent id.")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--workspace <path>", "Workspace path used to locate the default config directory.")
+    .option("--yes", "Confirm non-interactive revoke.")
+    .action((intent: string, rawOptions: RevokeCommandOptions) => {
+      const store = createIntentStore(rawOptions.configDir, rawOptions.workspace);
+      const result = store.revoke({
+        id: intent,
+        yes: Boolean(rawOptions.yes)
+      });
+      writeOut(formatIntentChanged("revoked", result.intent));
     });
 
   program
@@ -325,6 +368,7 @@ export function createCli(options: CliOptions = {}): Command {
         secretStore: options.secretStore ?? new MacOSKeychainSecretStore(),
         args: normalizeGithubArgs(args),
         runner: options.processRunner,
+        activeIntents: readActiveIntents(rawOptions.configDir, rawOptions.workspace),
         session: rawOptions.profile ? {
           id: rawOptions.sessionId ?? "cli",
           client: rawOptions.client,
@@ -368,6 +412,7 @@ export function createCli(options: CliOptions = {}): Command {
         secretStore: options.secretStore ?? new MacOSKeychainSecretStore(),
         args: normalizeSupabaseArgs(args),
         runner: options.processRunner,
+        activeIntents: readActiveIntents(rawOptions.configDir, rawOptions.workspace),
         session: rawOptions.profile ? {
           id: rawOptions.sessionId ?? "cli",
           client: rawOptions.client,
@@ -505,6 +550,7 @@ export function createCli(options: CliOptions = {}): Command {
           privateKeyField: rawOptions.privateKeyField,
           agentSocketField: rawOptions.agentSocketField
         },
+        activeIntents: readActiveIntents(rawOptions.configDir, rawOptions.workspace),
         runner: options.processRunner
       });
       writeOut(formatSshRun("ssh", result));
@@ -548,6 +594,7 @@ export function createCli(options: CliOptions = {}): Command {
           privateKeyField: rawOptions.privateKeyField,
           agentSocketField: rawOptions.agentSocketField
         },
+        activeIntents: readActiveIntents(rawOptions.configDir, rawOptions.workspace),
         runner: options.processRunner
       });
       writeOut(formatSshRun("git-ssh", result));
@@ -579,6 +626,7 @@ export function createCli(options: CliOptions = {}): Command {
         secretStore: options.secretStore ?? new MacOSKeychainSecretStore(),
         args: normalizeVercelArgs(args),
         runner: options.processRunner,
+        activeIntents: readActiveIntents(rawOptions.configDir, rawOptions.workspace),
         session: rawOptions.profile ? {
           id: rawOptions.sessionId ?? "cli",
           client: rawOptions.client,
@@ -607,6 +655,23 @@ interface InitCommandOptions {
   llmKey: string[];
   yes?: boolean;
   dryRun?: boolean;
+}
+
+interface UseCommandOptions {
+  workspace: string;
+  provider: string;
+  profile: string;
+  environment: string;
+  risk: string;
+  ttl: string;
+  configDir?: string;
+  yes?: boolean;
+}
+
+interface RevokeCommandOptions {
+  configDir?: string;
+  workspace?: string;
+  yes?: boolean;
 }
 
 interface SecretAddCommandOptions {
@@ -800,6 +865,27 @@ function createInventory(configDir: string | undefined, workspace: string | unde
   });
 }
 
+function createIntentStore(configDir: string | undefined, workspace: string | undefined): HumanIntentStore {
+  return new HumanIntentStore({
+    configDir: resolveConfigDir(configDir, workspace)
+  });
+}
+
+function resolveConfigDir(configDir: string | undefined, workspace: string | undefined): string {
+  return path.resolve(configDir ?? path.join(workspace ? path.resolve(workspace) : process.cwd(), ".tokenvalve"));
+}
+
+function readActiveIntents(configDir: string | undefined, workspace: string | undefined) {
+  return createIntentStore(configDir, workspace).list();
+}
+
+function normalizeRisk(value: string): RiskLevel {
+  if (value === "read" || value === "write" || value === "dangerous" || value === "production_deploy" || value === "unknown") {
+    return value;
+  }
+  throw new Error(`Unsupported risk: ${value}`);
+}
+
 function normalizeStatus(value: string): ProfileStatus {
   if (value === "draft" || value === "unverified" || value === "verified" || value === "expired" || value === "disabled") {
     return value;
@@ -962,6 +1048,34 @@ function formatSecretChanged(action: string, profile: { id: string; provider: st
     `- environment: ${profile.environment ?? "not set"}`,
     `- status: ${profile.status ?? "unverified"}`,
     "- secret value: stored outside YAML and hidden from output"
+  ].join("\n") + "\n";
+}
+
+function formatIntentChanged(action: string, intent: {
+  id: string;
+  status: string;
+  source: string;
+  expiresAt: string;
+  scope: {
+    workspace: string;
+    provider: string;
+    profile: string;
+    environment: string;
+    risk: string;
+  };
+}): string {
+  return [
+    "TokenValve human intent",
+    `- ${action}: ${intent.id}`,
+    `- status: ${intent.status}`,
+    `- source: ${intent.source}`,
+    `- workspace: ${intent.scope.workspace}`,
+    `- provider: ${intent.scope.provider}`,
+    `- profile: ${intent.scope.profile}`,
+    `- environment: ${intent.scope.environment}`,
+    `- risk: ${intent.scope.risk}`,
+    `- expiresAt: ${intent.expiresAt}`,
+    "- secret value: never stored in intent"
   ].join("\n") + "\n";
 }
 

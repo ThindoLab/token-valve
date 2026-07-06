@@ -305,7 +305,7 @@
 - 子进程结束后父进程环境不保留 secret。
 - shims 与 direct `tokenvalve exec` 行为一致。
 
-### Phase 15: Human Intent
+### Phase 15: Human Intent（已完成）
 
 交付物：TTL-bound 本地授权机制。
 

@@ -1,6 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { resolveContext } from "./resolver.js";
+import type { HumanIntentGrant } from "./types.js";
 
 const fixtureConfig = path.join(import.meta.dirname, "fixtures", "resolution-config.yaml");
 const fixtureAdapters = path.join(import.meta.dirname, "fixtures", "resolution-adapters.yaml");
@@ -130,6 +131,96 @@ describe("resolveContext", () => {
       environment: "production",
       risk: "production_deploy"
     });
+  });
+
+  it("allows high-risk operations when an active human intent matches exact scope", () => {
+    const result = resolveContext({
+      workspace: "/workspaces/token-valve",
+      config: fixtureConfig,
+      adapters: fixtureAdapters,
+      now: "2026-07-06T00:05:00.000Z",
+      activeIntents: [{
+        id: "intent_vercel_prod",
+        status: "active",
+        source: "cli",
+        scope: {
+          workspace: "/workspaces/token-valve",
+          provider: "vercel",
+          profile: "vercel:team-a",
+          environment: "production",
+          risk: "production_deploy"
+        },
+        createdAt: "2026-07-06T00:00:00.000Z",
+        expiresAt: "2026-07-06T00:10:00.000Z"
+      }],
+      execution: {
+        kind: "cli",
+        command: "vercel",
+        args: ["deploy", "--prod"]
+      }
+    });
+
+    expect(result).toMatchObject({
+      decision: "allow",
+      reason: "allowed",
+      provider: "vercel",
+      profile: "vercel:team-a",
+      risk: "production_deploy",
+      intent: {
+        id: "intent_vercel_prod"
+      }
+    });
+  });
+
+  it("does not allow high-risk operations with expired or mismatched human intent", () => {
+    const activeIntents: HumanIntentGrant[] = [{
+      id: "intent_wrong_profile",
+      status: "active" as const,
+      source: "cli" as const,
+      scope: {
+        workspace: "/workspaces/token-valve",
+        provider: "vercel",
+        profile: "vercel:other",
+        environment: "production",
+        risk: "production_deploy" as const
+      },
+      createdAt: "2026-07-06T00:00:00.000Z",
+      expiresAt: "2026-07-06T00:10:00.000Z"
+    }];
+    const mismatched = resolveContext({
+      workspace: "/workspaces/token-valve",
+      config: fixtureConfig,
+      adapters: fixtureAdapters,
+      now: "2026-07-06T00:05:00.000Z",
+      activeIntents,
+      execution: {
+        kind: "cli",
+        command: "vercel",
+        args: ["deploy", "--prod"]
+      }
+    });
+    const expired = resolveContext({
+      workspace: "/workspaces/token-valve",
+      config: fixtureConfig,
+      adapters: fixtureAdapters,
+      now: "2026-07-06T00:11:00.000Z",
+      activeIntents: [{
+        ...activeIntents[0]!,
+        id: "intent_expired",
+        scope: {
+          ...activeIntents[0]!.scope,
+          profile: "vercel:team-a"
+        }
+      }],
+      execution: {
+        kind: "cli",
+        command: "vercel",
+        args: ["deploy", "--prod"]
+      }
+    });
+
+    expect(mismatched).toMatchObject({ decision: "blocked", reason: "human_intent_required" });
+    expect(expired).toMatchObject({ decision: "blocked", reason: "human_intent_required" });
   });
 
   it("resolves LLM key profile metadata without returning secrets", () => {

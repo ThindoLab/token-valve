@@ -33,6 +33,10 @@ export interface AuditEventInput {
     command?: string;
     metadata?: Record<string, unknown>;
   };
+  intent?: {
+    id: string;
+    expiresAt: string;
+  };
   message?: string;
   knownSecrets?: string[];
 }
@@ -67,6 +71,10 @@ export interface AuditEvent {
     targetRedacted?: string;
     commandRedacted?: string;
     metadataRedacted?: Record<string, unknown>;
+  };
+  intent?: {
+    id: string;
+    expiresAt: string;
   };
   messageRedacted?: string;
 }
@@ -121,6 +129,10 @@ export function shapeAuditEvent(input: AuditEventInput): AuditEvent {
         ? redactJsonValue(input.operation.metadata, redactionOptions)
         : undefined
     };
+  }
+
+  if (input.intent) {
+    event.intent = input.intent;
   }
 
   if (input.message) {

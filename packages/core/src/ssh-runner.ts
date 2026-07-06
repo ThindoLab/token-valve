@@ -6,7 +6,7 @@ import { type ProcessRunner, NodeProcessRunner } from "./github-runner.js";
 import { redactForReturn } from "./redactor.js";
 import { createSecretRef, type SecretStore } from "./secret-store.js";
 import { resolveContext } from "./resolver.js";
-import type { AdapterDefinition, AgentSessionContext, ResolveResult, TokenValveConfig } from "./types.js";
+import type { AdapterDefinition, AgentSessionContext, HumanIntentGrant, ResolveResult, TokenValveConfig } from "./types.js";
 
 export type KnownHostsPolicy =
   | { mode: "strict"; file: string }
@@ -33,6 +33,8 @@ export interface SshCommandRunInput {
   knownHosts?: KnownHostsPolicy;
   credentialFields?: SshCredentialFields;
   session?: AgentSessionContext;
+  activeIntents?: HumanIntentGrant[];
+  now?: string;
   runner?: ProcessRunner;
 }
 
@@ -48,6 +50,8 @@ export interface GitSshRunInput {
   knownHosts?: KnownHostsPolicy;
   credentialFields?: SshCredentialFields;
   session?: AgentSessionContext;
+  activeIntents?: HumanIntentGrant[];
+  now?: string;
   runner?: ProcessRunner;
 }
 
@@ -96,6 +100,8 @@ export async function runSshCommand(input: SshCommandRunInput): Promise<SshRunRe
     config: input.config,
     adapters: input.adapters ?? [SSH_ADAPTER],
     session: input.session,
+    activeIntents: input.activeIntents,
+    now: input.now,
     execution: {
       kind: "host-operation",
       type: "ssh-command",
@@ -172,6 +178,7 @@ export async function runSshCommand(input: SshCommandRunInput): Promise<SshRunRe
           metadata: { host: input.host, user: input.user, port: input.port, operation: input.operation }
         },
         message: `${stdout}\n${stderr}`,
+        intent: resolve.intent,
         knownSecrets
       })
     };
@@ -187,6 +194,8 @@ export async function runGitSsh(input: GitSshRunInput): Promise<SshRunResult> {
     config: input.config,
     adapters: input.adapters ?? [SSH_ADAPTER],
     session: input.session,
+    activeIntents: input.activeIntents,
+    now: input.now,
     execution: {
       kind: "host-operation",
       type: "git-ssh",
@@ -201,16 +210,7 @@ export async function runGitSsh(input: GitSshRunInput): Promise<SshRunResult> {
     return blockedResult(input, { ...resolve, decision: "blocked", reason: preflight.reason, message: preflight.message }, preflight.message, "git");
   }
 
-  if (resolve.environment === "production" && resolve.risk === "write") {
-    return blockedResult(input, {
-      ...resolve,
-      decision: "blocked",
-      reason: "human_intent_required",
-      message: "Human intent is required for production git over SSH write operations."
-    }, "Human intent is required for production git over SSH write operations.", "git");
-  }
-
-  if (resolve.decision === "blocked" || resolve.risk !== "read") {
+  if (resolve.decision === "blocked" || !["read", "write"].includes(resolve.risk ?? "unknown")) {
     return blockedResult(input, resolve, "Git over SSH operation blocked before execution.", "git");
   }
 
@@ -268,6 +268,7 @@ export async function runGitSsh(input: GitSshRunInput): Promise<SshRunResult> {
           metadata: { host, operation: input.operation }
         },
         message: `${stdout}\n${stderr}`,
+        intent: resolve.intent,
         knownSecrets
       })
     };

@@ -178,6 +178,8 @@ export interface ResolveInput {
   adapters: AdapterDefinition[] | string;
   execution: ExecutionContext;
   session?: AgentSessionContext;
+  activeIntents?: HumanIntentGrant[];
+  now?: string;
 }
 
 export interface ResolveResult {
@@ -196,4 +198,31 @@ export interface ResolveResult {
     client?: string;
     usedOverride: boolean;
   };
+  intent?: {
+    id: string;
+    source: HumanIntentSource;
+    expiresAt: string;
+  };
+}
+
+export type HumanIntentStatus = "active" | "revoked" | "expired" | "pending";
+
+export type HumanIntentSource = "cli" | "mcp-request";
+
+export interface HumanIntentScope {
+  workspace: string;
+  provider: string;
+  profile: string;
+  environment: string;
+  risk: RiskLevel;
+}
+
+export interface HumanIntentGrant {
+  id: string;
+  status: HumanIntentStatus;
+  source: HumanIntentSource;
+  scope: HumanIntentScope;
+  createdAt: string;
+  expiresAt: string;
+  revokedAt?: string;
 }

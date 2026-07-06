@@ -207,6 +207,49 @@ describe("runGitSsh", () => {
     expect(runner.calls).toEqual([]);
   });
 
+  it("runs production git SSH writes when active human intent matches", async () => {
+    const runner = new FakeProcessRunner();
+    const result = await runGitSsh({
+      workspace: WORKSPACE,
+      config: makeConfig("production"),
+      adapters: makeAdapters(),
+      secretStore: await makeStore(),
+      provider: "github",
+      remoteUrl: "git@github.com:ThindoLab/token-valve.git",
+      operation: "push",
+      knownHosts: { mode: "strict", file: "/Users/xing/.ssh/known_hosts" },
+      now: "2026-07-06T00:05:00.000Z",
+      activeIntents: [{
+        id: "intent_git_ssh_push",
+        status: "active",
+        source: "cli",
+        scope: {
+          workspace: WORKSPACE,
+          provider: "github",
+          profile: "github:ssh",
+          environment: "production",
+          risk: "write"
+        },
+        createdAt: "2026-07-06T00:00:00.000Z",
+        expiresAt: "2026-07-06T00:10:00.000Z"
+      }],
+      runner
+    });
+
+    expect(result).toMatchObject({
+      executed: true,
+      resolve: {
+        decision: "allow",
+        risk: "write",
+        intent: {
+          id: "intent_git_ssh_push"
+        }
+      }
+    });
+    expect(runner.calls[0]?.command).toBe("git");
+    expect(runner.calls[0]?.args).toEqual(["push", "git@github.com:ThindoLab/token-valve.git"]);
+  });
+
   it("supports temporary private key files and cleans the path from output", async () => {
     const runner = new FakeProcessRunner();
     const result = await runGitSsh({

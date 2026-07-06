@@ -3,7 +3,7 @@ import { type ProcessRunner, NodeProcessRunner } from "./github-runner.js";
 import { redactForReturn } from "./redactor.js";
 import { createSecretRef, type SecretStore } from "./secret-store.js";
 import { resolveContext } from "./resolver.js";
-import type { AdapterDefinition, AgentSessionContext, ResolveResult, TokenValveConfig } from "./types.js";
+import type { AdapterDefinition, AgentSessionContext, HumanIntentGrant, ResolveResult, TokenValveConfig } from "./types.js";
 
 export interface VercelCliRunInput {
   workspace: string;
@@ -11,6 +11,8 @@ export interface VercelCliRunInput {
   secretStore: SecretStore;
   args: string[];
   session?: AgentSessionContext;
+  activeIntents?: HumanIntentGrant[];
+  now?: string;
   runner?: ProcessRunner;
 }
 
@@ -38,6 +40,8 @@ export async function runVercelCli(input: VercelCliRunInput): Promise<VercelRunR
     config: input.config,
     adapters: [VERCEL_ADAPTER],
     session: input.session,
+    activeIntents: input.activeIntents,
+    now: input.now,
     execution: {
       kind: "cli",
       command: "vercel",
@@ -50,7 +54,7 @@ export async function runVercelCli(input: VercelCliRunInput): Promise<VercelRunR
     return blockedResult(input, { ...resolve, decision: "blocked", reason: policyBlock.reason, message: policyBlock.message }, policyBlock.message);
   }
 
-  if (resolve.decision === "blocked" || resolve.risk !== "write") {
+  if (resolve.decision === "blocked" || !["write", "production_deploy"].includes(resolve.risk ?? "unknown")) {
     return blockedResult(input, resolve, "Vercel command blocked before execution.");
   }
 
@@ -96,6 +100,7 @@ export async function runVercelCli(input: VercelCliRunInput): Promise<VercelRunR
       session: input.session ? { id: input.session.id, client: input.session.client } : undefined,
       command: { binary: "vercel", args: input.args },
       message: `${stdout}\n${stderr}`,
+      intent: resolve.intent,
       knownSecrets
     })
   };
@@ -106,13 +111,6 @@ function getVercelPolicyBlock(resolve: ResolveResult, args: string[]): Pick<Reso
     return {
       reason: "capability_not_configured",
       message: "Vercel global auth commands are not allowed by TokenValve."
-    };
-  }
-
-  if (resolve.risk === "production_deploy") {
-    return {
-      reason: "human_intent_required",
-      message: "Human intent is required for Vercel production deploys."
     };
   }
 

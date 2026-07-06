@@ -3,7 +3,7 @@ import { type ProcessRunner, NodeProcessRunner } from "./github-runner.js";
 import { redactForReturn } from "./redactor.js";
 import { createSecretRef, type SecretStore } from "./secret-store.js";
 import { resolveContext } from "./resolver.js";
-import type { AdapterDefinition, AgentSessionContext, ResolveResult, TokenValveConfig } from "./types.js";
+import type { AdapterDefinition, AgentSessionContext, HumanIntentGrant, ResolveResult, TokenValveConfig } from "./types.js";
 
 export interface HttpRunInput {
   method: string;
@@ -42,6 +42,8 @@ export interface SupabaseCliRunInput {
   secretStore: SecretStore;
   args: string[];
   session?: AgentSessionContext;
+  activeIntents?: HumanIntentGrant[];
+  now?: string;
   runner?: ProcessRunner;
 }
 
@@ -99,6 +101,8 @@ export async function runSupabaseCli(input: SupabaseCliRunInput): Promise<Supaba
     config: input.config,
     adapters: [SUPABASE_ADAPTER],
     session: input.session,
+    activeIntents: input.activeIntents,
+    now: input.now,
     execution: {
       kind: "cli",
       command: "supabase",
@@ -111,7 +115,7 @@ export async function runSupabaseCli(input: SupabaseCliRunInput): Promise<Supaba
     return blockedCliResult(input, { ...resolve, decision: "blocked", reason: policyBlock.reason, message: policyBlock.message }, policyBlock.message);
   }
 
-  if (resolve.decision === "blocked" || resolve.risk !== "read") {
+  if (resolve.decision === "blocked" || !["read", "write", "dangerous"].includes(resolve.risk ?? "unknown")) {
     return blockedCliResult(input, resolve, "Supabase command blocked before execution.");
   }
 
@@ -153,6 +157,7 @@ export async function runSupabaseCli(input: SupabaseCliRunInput): Promise<Supaba
       session: input.session ? { id: input.session.id, client: input.session.client } : undefined,
       command: { binary: "supabase", args: input.args },
       message: `${stdout}\n${stderr}`,
+      intent: resolve.intent,
       knownSecrets: [token]
     })
   };
@@ -225,13 +230,6 @@ function getSupabasePolicyBlock(resolve: ResolveResult, args: string[]): Pick<Re
     return {
       reason: "capability_not_configured",
       message: "Supabase global auth commands are not allowed by TokenValve."
-    };
-  }
-
-  if (resolve.environment === "production" && resolve.risk === "write") {
-    return {
-      reason: "human_intent_required",
-      message: "Human intent is required for Supabase production write operations."
     };
   }
 

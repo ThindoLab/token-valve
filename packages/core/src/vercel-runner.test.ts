@@ -66,6 +66,25 @@ function makeConfig(status: "verified" | "unverified" = "verified"): TokenValveC
   };
 }
 
+function makeProductionConfig(): TokenValveConfig {
+  return {
+    workspaces: [
+      {
+        path: WORKSPACE,
+        providers: {
+          vercel: {
+            profile: "vercel:team",
+            environment: "production"
+          }
+        }
+      }
+    ],
+    profiles: [
+      { id: "vercel:team", provider: "vercel", environment: "production", status: "verified" }
+    ]
+  };
+}
+
 describe("runVercelCli", () => {
   it("runs preview deploy with per-process Vercel env and redacted output", async () => {
     const runner = new FakeProcessRunner();
@@ -113,6 +132,52 @@ describe("runVercelCli", () => {
     expect(result.executed).toBe(false);
     expect(result.resolve.reason).toBe("human_intent_required");
     expect(runner.calls).toEqual([]);
+  });
+
+  it("runs production deploys when active human intent matches", async () => {
+    const runner = new FakeProcessRunner();
+    const result = await runVercelCli({
+      workspace: WORKSPACE,
+      config: makeProductionConfig(),
+      secretStore: await makeStore(),
+      args: ["deploy", "--prod"],
+      now: "2026-07-06T00:05:00.000Z",
+      activeIntents: [{
+        id: "intent_vercel_prod",
+        status: "active",
+        source: "cli",
+        scope: {
+          workspace: WORKSPACE,
+          provider: "vercel",
+          profile: "vercel:team",
+          environment: "production",
+          risk: "production_deploy"
+        },
+        createdAt: "2026-07-06T00:00:00.000Z",
+        expiresAt: "2026-07-06T00:10:00.000Z"
+      }],
+      runner
+    });
+
+    expect(result).toMatchObject({
+      executed: true,
+      resolve: {
+        decision: "allow",
+        risk: "production_deploy",
+        intent: {
+          id: "intent_vercel_prod"
+        }
+      }
+    });
+    expect(runner.calls[0]).toMatchObject({
+      command: "vercel",
+      args: ["deploy", "--prod"],
+      env: {
+        VERCEL_TOKEN: TOKEN
+      }
+    });
+    expect(JSON.stringify(result.audit)).toContain("intent_vercel_prod");
+    expect(JSON.stringify(result.audit)).not.toContain(TOKEN);
   });
 
   it("blocks global auth commands and missing tokens without launching vercel", async () => {

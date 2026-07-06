@@ -156,6 +156,52 @@ describe("runSupabaseCli", () => {
     expect(runner.calls).toEqual([]);
   });
 
+  it("runs production writes when active human intent matches", async () => {
+    const runner = new FakeProcessRunner();
+    const result = await runSupabaseCli({
+      workspace: WORKSPACE,
+      config: makeConfig("supabase:production", "production"),
+      secretStore: await makeStore(),
+      args: ["db", "push"],
+      now: "2026-07-06T00:05:00.000Z",
+      activeIntents: [{
+        id: "intent_supabase_prod_write",
+        status: "active",
+        source: "cli",
+        scope: {
+          workspace: WORKSPACE,
+          provider: "supabase",
+          profile: "supabase:production",
+          environment: "production",
+          risk: "write"
+        },
+        createdAt: "2026-07-06T00:00:00.000Z",
+        expiresAt: "2026-07-06T00:10:00.000Z"
+      }],
+      runner
+    });
+
+    expect(result).toMatchObject({
+      executed: true,
+      resolve: {
+        decision: "allow",
+        environment: "production",
+        risk: "write",
+        intent: {
+          id: "intent_supabase_prod_write"
+        }
+      }
+    });
+    expect(runner.calls[0]).toMatchObject({
+      command: "supabase",
+      args: ["db", "push"],
+      env: {
+        SUPABASE_ACCESS_TOKEN: PROD_TOKEN
+      }
+    });
+    expect(result.stdout).not.toContain(PROD_TOKEN);
+  });
+
   it("blocks when the Supabase token is missing", async () => {
     const runner = new FakeProcessRunner();
     const result = await runSupabaseCli({

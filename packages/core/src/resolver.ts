@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { parse } from "yaml";
+import { findMatchingHumanIntent } from "./human-intent.js";
 import type {
   AdapterDefinition,
   CapabilityDefinition,
@@ -106,7 +107,15 @@ export function resolveContext(input: ResolveInput): ResolveResult {
     });
   }
 
-  if (risk === "dangerous" || risk === "production_deploy") {
+  const intent = findMatchingHumanIntent(input.activeIntents, {
+    workspace: binding.path,
+    provider,
+    profile: profile.id,
+    environment: environment ?? "",
+    risk
+  }, input.now);
+
+  if ((risk === "write" && environment === "production" || risk === "dangerous" || risk === "production_deploy") && !intent) {
     return blocked("human_intent_required", `Human intent is required for ${risk} operations.`, {
       workspace: binding.path,
       provider,
@@ -130,7 +139,12 @@ export function resolveContext(input: ResolveInput): ResolveResult {
     capability: capability.id,
     capabilityType: capability.type,
     risk,
-    session: getSessionResult(input, usedSessionOverride)
+    session: getSessionResult(input, usedSessionOverride),
+    intent: intent ? {
+      id: intent.id,
+      source: intent.source,
+      expiresAt: intent.expiresAt
+    } : undefined
   };
 }
 

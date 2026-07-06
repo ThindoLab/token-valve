@@ -2,6 +2,8 @@
 
 ## 2026-07-06
 
+- Added the Phase 15 human intent system with TTL-bound local grants, exact-scope matching, use/revoke CLI commands, runner integration, and intent audit summaries.
+- Added the Phase 15 feature spec covering human intent requirements, implementation plan, and validation checklist.
 - Added the Phase 14 shim execution layer with gh/supabase/vercel shim support, real binary discovery, recursion avoidance, args-array forwarding, child-scoped env injection, and redacted output handling.
 - Added the Phase 14 feature spec covering shim execution requirements, implementation plan, and validation checklist.
 - Added the Phase 13 Vercel MVP with preview deploy execution, production deploy blocking, Vercel env injection, global auth command refusal, and redacted audit/output handling.
