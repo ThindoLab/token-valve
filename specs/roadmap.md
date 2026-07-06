@@ -458,7 +458,7 @@
 - 执行失败后能恢复原状态或给出明确修复建议。
 - 所有 global switch 操作可审计。
 
-### Phase 22: Doctor 与加固
+### Phase 22: Doctor 与加固（已完成）
 
 交付物：`tokenvalve doctor` 诊断与修复建议。
 

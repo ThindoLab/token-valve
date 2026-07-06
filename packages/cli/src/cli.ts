@@ -4,6 +4,7 @@ import path from "node:path";
 import { renderDashboard, renderDashboardUseResult } from "@tokenvalve/dashboard";
 import {
   CustomProviderStore,
+  formatDoctorResult,
   getCoreHealth,
   HumanIntentStore,
   runCurlTemplate,
@@ -22,6 +23,7 @@ import {
   runVercelCli,
   resolveContext,
   runScenarioInit,
+  runDoctor,
   type AdapterDefinition,
   type CustomProviderMapping,
   type HttpRunner,
@@ -53,17 +55,17 @@ export function createCli(options: CliOptions = {}): Command {
 
   program
     .command("doctor")
-    .description("Run project skeleton diagnostics.")
-    .action(() => {
-      const health = getCoreHealth();
-
-      writeOut(
-        [
-          "TokenValve doctor",
-          `- ${health.message}`,
-          "- real resolver, secret store, MCP tools, shims, and dashboard diagnostics are implemented in later phases"
-        ].join("\n") + "\n"
-      );
+    .description("Diagnose TokenValve installation, mappings, profiles, shims, and runtime locks.")
+    .option("--workspace <path>", "Workspace path.", process.cwd())
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--path <value>", "PATH value to diagnose.", process.env.PATH ?? "")
+    .action((rawOptions: DoctorCommandOptions) => {
+      const workspace = path.resolve(rawOptions.workspace);
+      writeOut(formatDoctorResult(runDoctor({
+        workspace,
+        configDir: resolveConfigDir(rawOptions.configDir, workspace),
+        pathValue: rawOptions.path
+      })));
     });
 
   const dashboard = program
@@ -877,6 +879,12 @@ interface RevokeCommandOptions {
   configDir?: string;
   workspace?: string;
   yes?: boolean;
+}
+
+interface DoctorCommandOptions {
+  workspace: string;
+  configDir?: string;
+  path: string;
 }
 
 interface DashboardCommandOptions {

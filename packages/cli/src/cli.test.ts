@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -81,8 +81,54 @@ describe("tokenvalve cli", () => {
     await expect(runCli(["--version"])).resolves.toMatch(/0\.1\.0/);
   });
 
-  it("prints the phase 1 doctor placeholder", async () => {
-    await expect(runCli(["doctor"])).resolves.toContain("project skeleton is runnable");
+  it("runs doctor diagnostics with actionable next steps", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "tokenvalve-cli-doctor-empty-"));
+    const configDir = path.join(workspace, ".tokenvalve");
+    const output = await runCli([
+      "doctor",
+      "--workspace",
+      workspace,
+      "--config-dir",
+      configDir,
+      "--path",
+      ""
+    ]);
+
+    expect(output).toContain("TokenValve doctor");
+    expect(output).toContain("status: warning");
+    expect(output).toContain("config.missing");
+    expect(output).toContain("next:");
+  });
+
+  it("redacts secret-like values from doctor output", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "tokenvalve-cli-doctor-secret-"));
+    const configDir = path.join(workspace, ".tokenvalve");
+    const token = "ghp_cli_doctor_secret_value_1234567890";
+    await runCli([
+      "init",
+      "--workspace",
+      workspace,
+      "--config-dir",
+      configDir,
+      "--provider",
+      "github",
+      "--yes"
+    ]);
+    writeFileSync(path.join(configDir, "profiles.yaml"), `profiles:\n  - id: github:bad\n    provider: github\n    note: ${token}\n`, "utf8");
+
+    const output = await runCli([
+      "doctor",
+      "--workspace",
+      workspace,
+      "--config-dir",
+      configDir,
+      "--path",
+      path.join(configDir, "bin")
+    ]);
+
+    expect(output).toContain("config.plaintext_secret.profiles.yaml");
+    expect(output).toContain("[REDACTED]");
+    expect(output).not.toContain(token);
   });
 
   it("runs scenario init and writes workspace config", async () => {
