@@ -2,11 +2,13 @@
 
 ## 1. 产品定位
 
-TokenValve 是一个面向 AI Agent 和开发者 CLI 的本地凭证路由器。
+TokenValve 是一个面向 AI Agent、开发者 CLI、本地脚本、HTTP 请求和 SSH 操作的本地密钥管理器、凭证中转与执行网关。
 
-它的目标不是把密钥交给 Agent，也不是替代 1Password、Bitwarden、Vault 这类通用密钥管理器，而是在本地根据当前 workspace、用户一次性配置的使用场景、命令语义和安全策略，临时为 `gh`、`supabase`、`vercel` 等 CLI 注入正确凭证。
+它的目标不是把密钥交给 Agent，也不是替代 1Password、Bitwarden、Vault 这类通用密钥管理器，而是提供一个面向 Agent 工作流的本地密钥管理层：用户可以管理多套 LLM API key、GitHub/Supabase/Vercel 凭证、SSH credential 和自定义 provider secret，并在本地根据当前 workspace、用户一次性配置的使用场景、命令/请求语义和安全策略，把一次执行中转到正确认证上下文。
 
-命令执行结束后，凭证随子进程环境消失。TokenValve 默认不上传云端，不写入项目仓库，不调用全局账号切换命令。
+它类似 `cc switch` 的方向，但范围更宽：既能管理和切换多套 LLM API key，也能临时为 `gh`、`supabase`、`vercel` 等 CLI 切换认证方式或注入 env，为 `curl` / HTTP 请求注入 header/body/query，为 `ssh`、`git ssh`、内部脚本或工具选择正确私钥、agent socket 或其他凭证。
+
+单次执行结束后，凭证随子进程、受控请求或 SSH 执行上下文消失。TokenValve 默认不上传云端，不写入项目仓库，不调用全局账号切换命令。
 
 一句话：
 
@@ -19,14 +21,17 @@ TokenValve 是一个面向 AI Agent 和开发者 CLI 的本地凭证路由器。
 - GitHub：`personal`、`work`、`client-a`
 - Supabase：`thindo:staging`、`thindo:production`
 - Vercel：`team-a`、`personal`、`preview`
-- 其他 CLI：OpenAI、Stripe、Cloudflare、自定义内部工具
+- 其他 CLI / API / SSH：OpenAI、Stripe、Cloudflare、自定义内部工具、通过 `curl` 调用的 HTTP API、SSH host 或 git over SSH
+- LLM API key：OpenAI、Anthropic、Gemini、OpenRouter、本地网关、公司内部模型代理
 
 在 Claude Code、Codex 等 Agent 环境中，这些问题更明显：
 
+- 多个 Agent 或 CLI 工具需要在不同 LLM provider/key 之间切换，但用户不想把 key 散落在 shell profile、项目 `.env` 或各工具自己的配置里。
 - 不希望把真实 token 明文暴露给 Agent。
 - 不希望把 `.env`、token、账号配置上传到云端或提交到 git。
 - 不希望用 `gh auth switch` 这类全局切换影响其他项目。
 - 多项目、多 Agent、多终端并发时，全局账号状态容易混乱。
+- 两个正在运行的 Agent 可能前后相差几分钟分别向不同 GitHub 账号提交代码，不能因为全局账号状态被覆盖而串号。
 - staging 和 production 需要明确区分，但 production 写操作不能全自动执行。
 - 一旦每次执行都要人工选择 profile，Agent 体验会被打断。
 
@@ -37,6 +42,12 @@ TokenValve 是一个面向 AI Agent 和开发者 CLI 的本地凭证路由器。
 TokenValve 的核心体验不是让用户每次手动选择凭证，而是在 `init` 阶段一次性理解用户的主要使用场景，完成针对性配置。后续大部分常见命令应自动走正确 profile。
 
 MVP 只覆盖用户在初始化时明确选择和配置过的场景。不在配置范围内的场景默认不猜测、不兜底执行，而是拒绝并提示如何增量配置。
+
+### 3.1.1 可见、可选、可解释
+
+TokenValve 也是一个密钥管理工具。用户需要能看见本机有哪些 provider、profile、environment、LLM key 和 active intent，能安全地切换默认 profile，也能理解某次执行为什么选了某把钥匙。
+
+MVP 应提供轻量可视化呈现，可以先从 TUI / rich CLI dashboard 开始，而不是一开始做完整 Web 控制台。
 
 ### 3.2 确定性优先
 
@@ -60,12 +71,23 @@ MVP 不承诺抵御一个可以执行任意本地命令的恶意 Agent。如果 
 
 当 TokenValve 无法确定 profile、environment、命令风险或授权状态时，默认拒绝执行，并返回可操作的配置建议。
 
+### 3.5 并发隔离优先
+
+TokenValve 必须假设同一台机器上会同时运行多个 Agent、多个终端或多个 MCP session。
+
+默认执行策略是 per-execution credential brokering：每次 CLI 命令、HTTP 请求、SSH 操作或脚本执行，都根据 workspace、session、provider metadata、命令参数、request metadata、SSH host 和 policy 独立解析 profile，并只把凭证注入当前执行上下文。
+
+`gh auth switch`、`supabase login`、`vercel login` 这类全局账号切换不能作为默认路径。全局切换只能作为明确 opt-in 的兼容策略，并且必须有 provider 级互斥锁、短 TTL、审计日志和失败恢复。
+
 ## 4. 核心目标
 
 ### 4.1 用户体验目标
 
 - 用户运行一次 `tokenvalve init`，完成主要项目、provider、profile、environment、风险策略和 shim/MCP 配置。
-- Agent 仍然执行普通命令，例如 `gh repo view`、`supabase projects list`、`vercel deploy`。
+- 用户可以本地管理多套 LLM API key，并按 Agent、workspace 或命令选择默认 key。
+- 用户可以通过轻量 dashboard 查看 provider/profile 状态、默认映射、active intent、最近审计和需要处理的问题。
+- Agent 仍然执行普通命令、受控请求或 SSH 操作，例如 `gh repo view`、`supabase projects list`、`vercel deploy`、`curl https://api.supabase.com/...`、`ssh user@host` 或 `git push` over SSH。
+- 多个 Agent 可同时调用 MCP 或 shim，并根据 init 阶段的映射各自选择正确账号，不互相污染全局 CLI 状态。
 - staging、preview、development 等低风险环境可在配置明确时自动选择。
 - production 写操作必须要求本地人工授权或短 TTL human intent。
 - 未覆盖场景不自动猜测，但支持用户后续用增量命令添加 provider、profile、workspace binding 和策略。
@@ -105,6 +127,35 @@ MVP 不承诺抵御一个可以执行任意本地命令的恶意 Agent。如果 
 - `vercel:team-a`
 
 Profile id 统一使用 `<provider>:<name>` 或 `<provider>:<project>:<environment>` 格式。CLI 示例和配置文件必须使用同一套格式。
+
+### 5.2.1 LLM Key Profile
+
+LLM key profile 是面向模型 provider 的特殊 profile，用于管理多套 AI API key。
+
+示例：
+
+- `openai:personal`
+- `openai:work`
+- `anthropic:claude-code`
+- `openrouter:backup`
+- `internal-llm:production`
+
+LLM key profile 可以绑定到 workspace、Agent client、命令或默认用途，例如 code generation、review、embedding、fallback。TokenValve 只向受控执行上下文注入对应 key，不应把 key 明文返回给 Agent。
+
+### 5.2.2 Capability
+
+某个 provider 下需要凭证的可执行能力。
+
+示例：
+
+- `cli-command`：`gh repo view`、`supabase projects list`
+- `http-request`：GitHub REST API、Supabase Management API、Stripe API
+- `curl-template`：受控 `curl` 请求模板
+- `ssh-command`：`ssh user@host`、`scp`、`rsync -e ssh`
+- `git-ssh`：`git push` / `git fetch` over SSH
+- `script-command`：用户显式配置的本地脚本或内部工具
+
+Capability 与 provider/profile/environment/risk 一起参与解析。TokenValve 不应把所有能力都等同于 CLI 命令。
 
 ### 5.3 Environment
 
@@ -167,9 +218,41 @@ providers:
 - Supabase staging/production 分离
 - Vercel preview/production 分离
 - Agent 只读 GitHub 查询
-- 自定义 provider 环境变量注入
+- 自定义 provider 环境变量、HTTP header、请求模板或 SSH credential 注入
+- LLM API key 管理与切换
 
 Scenario Pack 不是动态智能推断，而是初始化时把用户需求转成具体 binding、policy、adapter 和验收矩阵。
+
+### 5.6.1 Recipe / Playbook
+
+Recipe 是一次新增或修复密钥流程沉淀下来的可验证配置方案。它不是 Agent 的聊天记忆，而是 TokenValve 保存的结构化结果，用于让下次相同场景可以可靠自动执行。
+
+Recipe 至少包含：
+
+- provider、profile、capability 和 workspace binding。
+- 需要哪些 secret field，以及这些 field 如何注入 env、HTTP header、SSH context 或 LLM provider profile。
+- 风险规则和 human intent 策略。
+- 验证命令或验证请求，例如 `gh api user`、`gh repo view owner/repo`、Supabase Management API 只读请求。
+- 最近一次验证时间、验证结果和脱敏后的诊断信息。
+
+Recipe 只能保存配置、测试和脱敏元数据，不能保存明文 secret。
+
+### 5.6.2 Skill Orchestration
+
+Skill 是面向 Agent 的工作流编排层。它负责把用户的自然语言需求转成 TokenValve 的结构化操作，例如“新增一个 GitHub key 给当前项目提交代码”或“配置 Supabase production key，但写操作必须确认”。
+
+Skill 可以：
+
+- 识别 provider 类型、用途、capability 和风险级别。
+- 引导用户选择 profile 命名、workspace 绑定、默认用途和 production 策略。
+- 调用 MCP 创建 profile、打开本地输入界面、执行验证、保存 Recipe。
+- 在验证失败时给出下一步修复建议。
+
+Skill 不可以：
+
+- 接收、保存、打印或转发明文 secret。
+- 绕过 MCP/Core 的 policy、redaction、audit 和 human intent。
+- 把未经验证的猜测沉淀为自动执行配置。
 
 ### 5.7 Active Intent
 
@@ -191,9 +274,17 @@ Human intent 是用户在本地 TTY、系统确认框、Touch ID 或客户端人
 
 Agent request 是 Agent 通过 MCP 提出的授权请求。Agent request 不能直接激活 production 写权限，只能创建待确认请求或返回需要用户执行的本地命令。
 
+### 5.9 Agent Session
+
+Agent session 表示一次 Agent 运行上下文，例如 Codex、Claude Code、Pi Agent 或其他 MCP client 的一个会话。
+
+TokenValve 不应依赖机器上唯一的“当前账号”。Resolver 必须能在同一时间处理多个 session 的请求，并基于 session、cwd、workspace binding、git remote、命令参数和 policy 做独立决策。
+
+同一 provider 的两个 session 如果解析到不同 profile，默认应通过子进程 env 注入、HTTP header 注入、SSH credential 选择或隔离配置目录并行执行，而不是互相切换全局账号。
+
 ## 6. 产品形态
 
-TokenValve 包含四部分：
+TokenValve 包含六部分：
 
 ### 6.1 Init Wizard
 
@@ -204,11 +295,27 @@ TokenValve 包含四部分：
 - 检测操作系统、shell、PATH、已安装 CLI、MCP client。
 - 检测当前 workspace、git remote、常见 provider 配置文件。
 - 询问用户要覆盖哪些 provider 和场景。
+- 询问是否要管理 LLM API key，以及每套 key 对应的 Agent/client/workspace 默认用途。
 - 交互式添加 profile 和 token。
 - 建立 workspace binding 和 environment mapping。
 - 配置 production 写操作策略。
 - 安装 shim。
 - 输出 dry-run 矩阵，展示常见命令会使用哪个 profile、哪些命令会被拒绝。
+
+### 6.1.1 Dashboard / TUI
+
+MVP 需要一个轻量可视化入口，用于查看和切换本地密钥状态。可以先做 TUI 或 rich CLI dashboard。
+
+它至少展示：
+
+- provider/profile 列表和脱敏状态。
+- LLM key profiles 及其默认绑定。
+- 当前 workspace binding。
+- active intent 和 TTL。
+- 最近审计日志。
+- doctor 发现的问题。
+
+Dashboard 不显示明文 secret，不负责团队共享，也不需要云端登录。
 
 ### 6.2 CLI
 
@@ -222,6 +329,9 @@ tokenvalve init --add-provider supabase --workspace .
 tokenvalve secret add github:work
 tokenvalve secret add supabase:thindo:staging
 tokenvalve secret add supabase:thindo:production
+tokenvalve secret add openai:work
+tokenvalve llm use openai:work --workspace .
+tokenvalve dashboard
 tokenvalve bind github:work --workspace .
 tokenvalve bind supabase:thindo:staging --workspace . --environment staging
 tokenvalve use supabase:thindo:production --workspace . --ttl 10m --allow write
@@ -233,14 +343,49 @@ tokenvalve audit list
 
 供 Claude Code、Codex 等 Agent 调用。
 
-MCP 不默认返回明文密钥，也不允许 Agent 直接激活 production 写权限。MCP 提供：
+MCP 是安全能力边界，不做开放式推理。它不默认返回明文密钥，也不允许 Agent 直接激活 production 写权限。MCP 提供：
 
 - 解析当前 workspace 应该使用哪个 profile。
+- 创建、更新、测试和查询脱敏 secret profile metadata。
+- 保存或读取已验证 Recipe。
 - 创建需要人工确认的授权请求。
 - 查询可用 provider/profile 脱敏元数据。
 - 在受限策略下执行带密钥的本地命令。
+- 打开本地 UI，让用户输入或编辑密钥。
 - 撤销临时授权。
 - 查看脱敏审计记录。
+
+### 6.3.1 Skill / Agent 编排层
+
+Skill 负责把自然语言需求编排成可验证的 TokenValve 配置流程。它可以问问题、调用 MCP、打开 UI、触发测试、总结验证结果，并把成功方案沉淀为 Recipe。
+
+典型流程：
+
+```text
+用户：给这个项目新增一个 GitHub key，用 ThindoLab 账号提交代码
+Skill：识别 provider=github、capability=cli-command/git、risk=write
+Skill -> MCP：创建脱敏 profile 草案
+Skill -> MCP：打开本地密钥输入 UI
+用户：在本地 UI 输入 token
+MCP/Core：写入 Keychain，执行验证命令
+Skill -> MCP：保存通过验证的 Recipe 和 workspace binding
+下次 Agent：直接按 Recipe 解析并执行；高风险操作仍走 human intent
+```
+
+Skill 的价值是“引导配置、知道如何测试、沉淀可复用方案”。MCP 的价值是“安全执行结构化操作”。两者边界必须清楚。
+
+### 6.3.2 Local Web UI
+
+正式产品形态应支持本地 Web UI。用户可以说“打开密钥管理器”，Agent 通过 MCP 调用 `ui_open`，TokenValve 在 `127.0.0.1` 启动短生命周期本地页面，用于查看、编辑、输入和验证密钥。
+
+Local Web UI 适合：
+
+- 新增或编辑 secret profile。
+- 查看 provider/profile/LLM key、workspace binding、active intent、audit 和 doctor 状态。
+- 运行 init 或 add-secret 向导。
+- 展示某次执行为什么被允许或拒绝。
+
+MVP 可先使用 TUI / rich CLI dashboard；完整 Web UI 作为后续正式形态，不做云端账号系统，不默认监听局域网，不显示明文 secret。
 
 ### 6.4 Shim
 
@@ -452,6 +597,7 @@ Resolver 必须返回结构化结果：
   "provider": "supabase",
   "profile": "supabase:thindo:production",
   "environment": "production",
+  "capability": "cli-command",
   "risk": "write",
   "decision": "blocked",
   "reason": "human_intent_required",
@@ -594,6 +740,32 @@ adapter 需要声明：
 - 哪些命令必须拒绝或要求额外确认。
 
 MVP 默认不调用 `gh auth switch`、`supabase login`、`vercel login` 这类全局登录状态变更命令。
+
+### 11.5.1 HTTP / Curl 请求
+
+TokenValve 也需要支持受控 HTTP 请求场景，例如 Agent 通过 MCP 请求调用 Supabase Management API，或执行一个配置过的 `curl` 请求模板。
+
+要求：
+
+- HTTP 请求必须结构化表示 method、url、headers、body，不能拼接 shell string。
+- secret 可以注入为 `Authorization` header、query 参数、body 字段或 adapter 声明的其他位置。
+- 审计日志默认只记录 method、host、path、provider、profile、environment、risk、decision，不记录原始 header/body。
+- production 写请求必须和 CLI 写操作一样走 human intent。
+- 未配置 riskRules 的 HTTP capability 必须 fail closed。
+
+### 11.5.2 SSH / Git over SSH 执行
+
+TokenValve 需要支持受控 SSH 场景，例如 `ssh user@host`、`scp`、`rsync -e ssh`、`git push` over SSH 或内部部署脚本。
+
+要求：
+
+- SSH capability 必须结构化声明 host、user、port、operation 和允许的命令形态。
+- secret 可以映射为 identity file、临时 key file、`SSH_AUTH_SOCK`、`GIT_SSH_COMMAND` 或 adapter 声明的其他 SSH credential context。
+- 默认不修改用户全局 `~/.ssh/config`、known_hosts 或 ssh-agent 状态。
+- known_hosts 策略必须显式配置，不能静默关闭 host key checking。
+- 审计日志不得记录私钥内容、完整私钥路径、agent socket 细节或未脱敏 remote URL。
+- production SSH 操作或部署操作必须和 CLI 写操作一样走 human intent。
+- 未配置 riskRules 的 SSH capability 必须 fail closed。
 
 ### 11.6 输出脱敏
 
@@ -761,13 +933,116 @@ Agent 请求用户授权，但不直接生效。
 }
 ```
 
-### 12.5 `revoke`
+### 12.5 `http_request_with_secrets`
+
+由 MCP 发起受控 HTTP 请求。适合 Supabase、GitHub、Stripe、Cloudflare 或内部 API。
+
+约束：
+
+- 只能调用已注册 provider adapter 的 HTTP capability。
+- request 必须结构化传入，不能传 shell string 或完整未解析 curl 命令。
+- URL host/path 必须匹配 adapter allowlist 或配置过的 template。
+- production 写请求仍然需要 human intent。
+- headers/body/query 中的 secret 必须脱敏后再进入日志和 MCP 返回值。
+
+输入：
+
+```json
+{
+  "cwd": "/Users/xing/VScode_workspace/Thindo",
+  "provider": "supabase",
+  "capability": "management-api",
+  "request": {
+    "method": "GET",
+    "url": "https://api.supabase.com/v1/projects"
+  }
+}
+```
+
+### 12.6 `ssh_with_secrets`
+
+由 MCP 发起受控 SSH 或 git over SSH 执行。
+
+约束：
+
+- 只能调用已注册 provider adapter 的 SSH capability。
+- host、user、port、operation 必须结构化传入，不能传完整 shell string。
+- SSH host 必须匹配 adapter allowlist 或配置过的 template。
+- production SSH 写操作或部署操作仍然需要 human intent。
+- 私钥路径、agent socket、remote URL 和命令输出必须脱敏。
+
+输入：
+
+```json
+{
+  "cwd": "/Users/xing/VScode_workspace/Thindo",
+  "provider": "github",
+  "capability": "git-ssh",
+  "operation": {
+    "type": "git-push",
+    "remote": "git@github.com:Bonday-Tech/thindo.git",
+    "branch": "main"
+  }
+}
+```
+
+### 12.7 `revoke`
 
 撤销当前 workspace、provider、profile 或 session 的临时授权。
 
-### 12.6 `audit_list`
+### 12.8 `audit_list`
 
 查看本地审计日志，默认脱敏。
+
+### 12.9 `secret_profile_create`
+
+创建 secret profile 草案或写入已通过本地输入的密钥。
+
+约束：
+
+- MCP 不接收明文 secret 参数。
+- 如果需要输入 secret，必须返回 `needs_local_input` 或调用 `ui_open`。
+- profile 创建后默认处于 `unverified` 状态，不能直接用于高风险自动执行。
+
+### 12.10 `secret_profile_test`
+
+执行 adapter 或 Recipe 声明的验证步骤。
+
+约束：
+
+- 测试命令或请求必须来自 adapter/Recipe allowlist。
+- 测试输出必须脱敏。
+- 测试通过后才能把 profile 标记为 `verified`。
+
+### 12.11 `recipe_save`
+
+保存一次经过验证的配置方案。
+
+保存内容包括 provider、profile、capability、workspace binding、risk rules、验证步骤和脱敏验证结果，不包括明文 secret。
+
+### 12.12 `recipe_list`
+
+列出可复用 Recipe，供 Skill 判断是否已有可靠方案可以直接执行。
+
+### 12.13 `ui_open`
+
+打开本地 UI 或 dashboard。
+
+输入示例：
+
+```json
+{
+  "view": "add-secret",
+  "providerHint": "github",
+  "workspace": "/Users/xing/VScode_workspace/token-valve"
+}
+```
+
+约束：
+
+- UI 只监听 loopback。
+- UI session 必须短 TTL。
+- UI 只能把 secret 写入 Core 管理的本地 secret store，不能把明文返回给 MCP client 或 Skill。
 
 ## 13. CLI MVP
 
@@ -792,9 +1067,10 @@ tokenvalve init --no-shim
 tokenvalve secret add github:work
 tokenvalve secret add supabase:thindo:staging
 tokenvalve secret add supabase:thindo:production
+tokenvalve secret test github:work
 ```
 
-交互式输入密钥，写入系统钥匙串。
+交互式输入密钥，写入系统钥匙串。新增密钥默认需要测试，测试通过后才能成为 verified profile。
 
 ### 13.3 绑定项目
 
@@ -836,6 +1112,16 @@ tokenvalve audit list
 tokenvalve revoke --workspace .
 ```
 
+### 13.8 Recipe 管理
+
+```bash
+tokenvalve recipe list
+tokenvalve recipe show github:thindolab-token-valve
+tokenvalve recipe test github:thindolab-token-valve
+```
+
+Recipe 命令用于查看、复测和调试已沉淀的配置方案。Recipe 不包含明文 secret。
+
 ## 14. Provider Adapter MVP
 
 ### 14.1 Adapter schema
@@ -844,15 +1130,36 @@ tokenvalve revoke --workspace .
 
 ```yaml
 provider: supabase
-commands:
-  - supabase
+capabilities:
+  - id: supabase-cli
+    type: cli-command
+    commands:
+      - supabase
+  - id: management-api
+    type: http-request
+    allowedHosts:
+      - api.supabase.com
+  - id: deploy-ssh
+    type: ssh-command
+    allowedHosts:
+      - deploy.thindo.internal
 env:
   SUPABASE_ACCESS_TOKEN: token
+headers:
+  Authorization: "Bearer {{token}}"
+ssh:
+  identityFile: deploy_key
+  knownHostsPolicy: strict
 projectResolvers:
   - type: configFile
     path: supabase/config.toml
 riskRules:
   - match: ["db", "push"]
+    risk: write
+  - match:
+      capability: management-api
+      method: POST
+      pathPrefix: /v1/projects
     risk: write
 sideEffects:
   writesProjectFiles:
@@ -927,7 +1234,7 @@ MVP 验证重点：
 
 ### 14.5 Generic
 
-允许用户自定义 env 映射。
+允许用户自定义 env、HTTP header 和请求模板映射。
 
 示例：
 
@@ -936,9 +1243,40 @@ custom:
   openai:
     env:
       OPENAI_API_KEY: api_key
+    headers:
+      Authorization: "Bearer {{api_key}}"
+    capabilities:
+      - id: responses-api
+        type: http-request
+        allowedHosts:
+          - api.openai.com
 ```
 
 Generic provider 默认不允许执行 production 写操作，除非用户显式配置 riskRules 和 policy。
+
+### 14.6 LLM Providers
+
+MVP 需要把 LLM API key 当作一等 provider 管理。
+
+内置 LLM provider：
+
+- `openai`
+- `anthropic`
+- `gemini`
+- `openrouter`
+- `custom-llm`
+
+能力：
+
+- 添加、更新、删除、列出 LLM key profile。
+- 为 workspace / Agent client / capability 设置默认 LLM key。
+- 为受控执行注入 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GOOGLE_API_KEY` 或自定义 env/header。
+- 查看脱敏状态、默认绑定和最近使用记录。
+
+非目标：
+
+- 不在 MVP 中代理完整模型请求流量，除非该请求被定义为受控 HTTP capability。
+- 不把 LLM key 明文返回给 Agent。
 
 ## 15. 后续能力
 
@@ -959,7 +1297,7 @@ MVP 不做：
 
 - 云端同步密钥。
 - 团队共享密钥。
-- Web 控制台。
+- 完整 Web 控制台。
 - 自动读取所有 `.env` 并导入。
 - 在 MCP 中直接返回明文 secret。
 - 无确认执行 production 高危写操作。
@@ -971,7 +1309,7 @@ MVP 不做：
 ### 17.1 Init
 
 - `tokenvalve init` 可以识别当前 workspace、已安装的 `gh`/`supabase`/`vercel` 和 git remote。
-- init 会询问用户选择 provider、profile、environment 和 production 策略。
+- init 会询问用户选择 provider、profile、environment、LLM key profile 和 production 策略。
 - init 完成后输出 dry-run 矩阵。
 - init 不把密钥写入 YAML 或项目目录。
 - 未选择的 provider 不自动接管。
@@ -1006,6 +1344,8 @@ MVP 不做：
 - `context_resolve` 返回 profile、environment、risk、decision 和 reason。
 - `intent_request` 不能直接激活 production 写权限。
 - `exec_with_secrets` 只能执行 adapter 注册命令，且不接受 shell string。
+- `http_request_with_secrets` 只能调用 adapter 注册的 HTTP capability，且必须脱敏 headers/body/query。
+- `ssh_with_secrets` 只能调用 adapter 注册的 SSH capability，且必须脱敏 identity、agent socket、remote URL 和输出。
 
 ### 17.6 安全
 
@@ -1021,6 +1361,24 @@ MVP 不做：
 - 用户可以通过 `tokenvalve init --add-provider ...` 增量添加 provider。
 - 用户可以通过 `tokenvalve bind ...` 增量添加 workspace/environment binding。
 - 增量配置后 dry-run 矩阵更新。
+
+### 17.8 LLM Key 管理与可视化
+
+- 可以添加至少两套 LLM API key profile，例如 `openai:personal` 和 `openai:work`。
+- 可以为 workspace 设置默认 LLM key profile。
+- Agent 通过 MCP 请求 LLM key metadata 时只能看到脱敏信息。
+- `tokenvalve dashboard` 可以展示 provider/profile、LLM key 绑定、active intent、最近审计和 doctor 状态。
+- dashboard 不显示明文 secret。
+
+### 17.9 Skill 与 Recipe
+
+- 用户说“新增一个 GitHub/Supabase/LLM key”时，内置 Skill 可以引导完成 provider 类型、profile 命名、workspace 绑定、capability、风险策略和验证方式选择。
+- Skill 不要求用户把明文 secret 粘贴进 Agent 对话。
+- `secret_profile_create` 不接受明文 secret 参数，只能创建草案或触发本地输入。
+- `secret_profile_test` 可以执行 adapter/Recipe 声明的验证步骤，并返回脱敏结果。
+- 验证通过后可以保存 Recipe；Recipe 不包含明文 secret。
+- 未验证或验证失败的 Recipe 不能用于自动执行写操作。
+- 下次相同 workspace/capability 请求可以基于已验证 Recipe 自动解析 profile；production 写操作仍需要 human intent。
 
 ## 18. 建议技术栈
 
@@ -1062,11 +1420,11 @@ TokenValve
 英文定位：
 
 ```text
-Local credential routing for AI agents and developer CLIs.
+Local secret manager, credential broker, and execution gateway for AI agents.
 ```
 
 中文定位：
 
 ```text
-面向 AI Agent 和开发者 CLI 的本地凭证路由器。
+面向 AI Agent 的本地密钥管理、凭证中转与执行网关。
 ```

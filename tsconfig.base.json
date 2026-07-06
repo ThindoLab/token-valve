@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "baseUrl": ".",
+    "paths": {
+      "@tokenvalve/core": ["packages/core/src/index.ts"],
+      "@tokenvalve/dashboard": ["packages/dashboard/src/index.ts"],
+      "@tokenvalve/mcp-server": ["packages/mcp-server/src/index.ts"],
+      "@tokenvalve/shims": ["packages/shims/src/index.ts"],
+      "@tokenvalve/skills": ["packages/skills/src/index.ts"]
+    },
+    "strict": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "noEmitOnError": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true
+  }
+}
