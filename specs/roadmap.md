@@ -212,7 +212,7 @@
 - 输出和错误中的 token 被脱敏。
 - 未匹配 workspace/repo 时 fail closed。
 
-### Phase 10: Supabase MVP
+### Phase 10: Supabase MVP（已完成）
 
 交付物：Supabase staging/production 区分与基础 CLI/API 执行。
 

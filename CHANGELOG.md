@@ -2,6 +2,8 @@
 
 ## 2026-07-06
 
+- Added the Phase 10 Supabase MVP with controlled CLI/API execution, staging read support, production write blocking, token injection, and redacted audit/output handling.
+- Added the Phase 10 feature spec covering Supabase MVP requirements, implementation plan, and validation checklist.
 - Added the Phase 9 GitHub MVP with per-execution `gh` token injection, session-aware profile routing, output/audit redaction, and a `tokenvalve github run` CLI path.
 - Added the Phase 9 feature spec covering GitHub MVP requirements, implementation plan, and validation checklist.
 - Added the Phase 8 LLM key management MVP with LLM-specific add/list/use/resolve commands, metadata-only YAML, client/use-case defaults, and resolver support for LLM profile selection.

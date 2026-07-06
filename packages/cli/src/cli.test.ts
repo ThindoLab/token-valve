@@ -11,8 +11,9 @@ class FakeProcessRunner implements ProcessRunner {
 
   public async run(input: ProcessRunInput) {
     this.calls.push(input);
+    const token = input.env.GH_TOKEN ?? input.env.SUPABASE_ACCESS_TOKEN ?? "";
     return {
-      stdout: `ok ${input.env.GH_TOKEN}`,
+      stdout: `ok ${token}`,
       stderr: "",
       exitCode: 0
     };
@@ -334,6 +335,57 @@ describe("tokenvalve cli", () => {
       env: {
         GH_TOKEN: token,
         GITHUB_TOKEN: token
+      }
+    });
+  });
+
+  it("runs Supabase commands with injected token and redacted output", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "tokenvalve-cli-supabase-"));
+    const configDir = path.join(workspace, ".tokenvalve");
+    const store = new MemorySecretStore();
+    const runner = new FakeProcessRunner();
+    const token = "sbp_cli_supabase_token_value_123456";
+
+    await runCli([
+      "secret",
+      "add",
+      "--config-dir",
+      configDir,
+      "--workspace",
+      workspace,
+      "--profile",
+      "supabase:staging",
+      "--provider",
+      "supabase",
+      "--environment",
+      "staging",
+      "--secret-value",
+      token,
+      "--yes"
+    ], { secretStore: store });
+
+    const output = await runCli([
+      "supabase",
+      "run",
+      "--workspace",
+      workspace,
+      "--config-dir",
+      configDir,
+      "--",
+      "projects",
+      "list"
+    ], { secretStore: store, processRunner: runner });
+
+    expect(output).toContain("TokenValve supabase");
+    expect(output).toContain("decision: allow");
+    expect(output).toContain("profile: supabase:staging");
+    expect(output).toContain("environment: staging");
+    expect(output).not.toContain(token);
+    expect(runner.calls[0]).toMatchObject({
+      command: "supabase",
+      args: ["projects", "list"],
+      env: {
+        SUPABASE_ACCESS_TOKEN: token
       }
     });
   });

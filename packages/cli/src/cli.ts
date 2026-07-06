@@ -6,6 +6,7 @@ import {
   MacOSKeychainSecretStore,
   ProfileInventory,
   runGitHubCli,
+  runSupabaseCli,
   resolveContext,
   runScenarioInit,
   type AdapterDefinition,
@@ -333,6 +334,49 @@ export function createCli(options: CliOptions = {}): Command {
       writeOut(formatGithubRun(result));
     });
 
+  const supabase = program
+    .command("supabase")
+    .description("Run Supabase CLI commands with per-execution TokenValve credentials.");
+
+  supabase
+    .command("run")
+    .description("Run a low-risk supabase command with a resolved Supabase profile.")
+    .requiredOption("--workspace <path>", "Workspace path.")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--session-id <id>", "Agent session id.")
+    .option("--client <name>", "Agent client.")
+    .option("--profile <id>", "Session-scoped Supabase profile override.")
+    .option("--environment <name>", "Session-scoped environment override.")
+    .allowUnknownOption(true)
+    .argument("[args...]", "Arguments after -- are passed to supabase.")
+    .action(async (args: string[], rawOptions: SupabaseRunCommandOptions) => {
+      const inventory = createInventory(rawOptions.configDir, rawOptions.workspace, options.secretStore);
+      const result = await runSupabaseCli({
+        workspace: path.resolve(rawOptions.workspace),
+        config: {
+          profiles: inventory.listProfiles(),
+          workspaces: inventory.getBindings()
+        },
+        secretStore: options.secretStore ?? new MacOSKeychainSecretStore(),
+        args: normalizeSupabaseArgs(args),
+        runner: options.processRunner,
+        session: rawOptions.profile ? {
+          id: rawOptions.sessionId ?? "cli",
+          client: rawOptions.client,
+          providers: {
+            supabase: {
+              profile: rawOptions.profile,
+              environment: rawOptions.environment
+            }
+          }
+        } : rawOptions.sessionId || rawOptions.client ? {
+          id: rawOptions.sessionId ?? "cli",
+          client: rawOptions.client
+        } : undefined
+      });
+      writeOut(formatSupabaseRun(result));
+    });
+
   return program;
 }
 
@@ -433,6 +477,15 @@ interface GithubRunCommandOptions {
   profile?: string;
 }
 
+interface SupabaseRunCommandOptions {
+  workspace: string;
+  configDir?: string;
+  sessionId?: string;
+  client?: string;
+  profile?: string;
+  environment?: string;
+}
+
 function collectValues(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
@@ -477,6 +530,14 @@ function normalizeGithubArgs(args: string[]): string[] {
   const normalized = args[0] === "--" ? args.slice(1) : args;
   if (normalized.length === 0) {
     throw new Error("GitHub command arguments are required after --.");
+  }
+  return normalized;
+}
+
+function normalizeSupabaseArgs(args: string[]): string[] {
+  const normalized = args[0] === "--" ? args.slice(1) : args;
+  if (normalized.length === 0) {
+    throw new Error("Supabase command arguments are required after --.");
   }
   return normalized;
 }
@@ -622,6 +683,29 @@ function formatGithubRun(result: Awaited<ReturnType<typeof runGitHubCli>>): stri
     `- reason: ${result.resolve.reason}`,
     `- provider: ${result.resolve.provider ?? "github"}`,
     `- profile: ${result.resolve.profile ?? "none"}`,
+    `- risk: ${result.resolve.risk ?? "none"}`,
+    `- executed: ${result.executed ? "yes" : "no"}`,
+    `- exitCode: ${result.exitCode}`
+  ];
+
+  if (result.stdout) {
+    lines.push("", "stdout:", result.stdout.replace(/\n$/, ""));
+  }
+  if (result.stderr) {
+    lines.push("", "stderr:", result.stderr.replace(/\n$/, ""));
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+function formatSupabaseRun(result: Awaited<ReturnType<typeof runSupabaseCli>>): string {
+  const lines = [
+    "TokenValve supabase",
+    `- decision: ${result.resolve.decision}`,
+    `- reason: ${result.resolve.reason}`,
+    `- provider: ${result.resolve.provider ?? "supabase"}`,
+    `- profile: ${result.resolve.profile ?? "none"}`,
+    `- environment: ${result.resolve.environment ?? "none"}`,
     `- risk: ${result.resolve.risk ?? "none"}`,
     `- executed: ${result.executed ? "yes" : "no"}`,
     `- exitCode: ${result.exitCode}`
