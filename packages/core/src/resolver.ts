@@ -31,24 +31,30 @@ export function resolveContext(input: ResolveInput): ResolveResult {
   if (!provider || !binding.providers[provider]) {
     return blocked("provider_not_configured", `Provider is not configured for workspace: ${provider ?? "unknown"}.`, {
       workspace: binding.path,
-      provider
+      provider,
+      session: getSessionResult(input, false)
     });
   }
 
-  const providerBinding = binding.providers[provider];
+  const workspaceProviderBinding = binding.providers[provider];
+  const sessionProviderBinding = input.session?.providers?.[provider];
+  const usedSessionOverride = Boolean(sessionProviderBinding);
+  const providerBinding = sessionProviderBinding ?? workspaceProviderBinding;
   const adapter = adapters.find((candidate) => candidate.provider === provider);
   if (!adapter) {
     return blocked("provider_not_configured", `Adapter is not configured for provider: ${provider}.`, {
       workspace: binding.path,
-      provider
+      provider,
+      session: getSessionResult(input, usedSessionOverride)
     });
   }
 
   const profile = findProfile(config.profiles, providerBinding.profile, provider);
   if (!profile) {
-    return blocked("profile_not_configured", `Profile is not configured: ${providerBinding.profile}.`, {
+    return blocked("profile_not_configured", `Profile is not configured: ${providerBinding.profile}. Check workspace or session provider bindings.`, {
       workspace: binding.path,
-      provider
+      provider,
+      session: getSessionResult(input, usedSessionOverride)
     });
   }
 
@@ -57,7 +63,8 @@ export function resolveContext(input: ResolveInput): ResolveResult {
     return blocked("environment_not_configured", `Environment is not configured for provider: ${provider}.`, {
       workspace: binding.path,
       provider,
-      profile: profile.id
+      profile: profile.id,
+      session: getSessionResult(input, usedSessionOverride)
     });
   }
 
@@ -67,7 +74,8 @@ export function resolveContext(input: ResolveInput): ResolveResult {
       workspace: binding.path,
       provider,
       profile: profile.id,
-      environment
+      environment,
+      session: getSessionResult(input, usedSessionOverride)
     });
   }
 
@@ -80,7 +88,8 @@ export function resolveContext(input: ResolveInput): ResolveResult {
       environment,
       capability: capability.id,
       capabilityType: capability.type,
-      risk
+      risk,
+      session: getSessionResult(input, usedSessionOverride)
     });
   }
 
@@ -92,7 +101,8 @@ export function resolveContext(input: ResolveInput): ResolveResult {
       environment,
       capability: capability.id,
       capabilityType: capability.type,
-      risk
+      risk,
+      session: getSessionResult(input, usedSessionOverride)
     });
   }
 
@@ -106,7 +116,8 @@ export function resolveContext(input: ResolveInput): ResolveResult {
     environment,
     capability: capability.id,
     capabilityType: capability.type,
-    risk
+    risk,
+    session: getSessionResult(input, usedSessionOverride)
   };
 }
 
@@ -275,5 +286,17 @@ function blocked(
     reason,
     message,
     ...partial
+  };
+}
+
+function getSessionResult(input: ResolveInput, usedOverride: boolean): ResolveResult["session"] {
+  if (!input.session) {
+    return undefined;
+  }
+
+  return {
+    id: input.session.id,
+    client: input.session.client,
+    usedOverride
   };
 }

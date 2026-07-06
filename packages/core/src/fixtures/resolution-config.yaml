@@ -23,6 +23,16 @@ profiles:
     environment: development
     displayName: ThindoLab GitHub
     status: verified
+  - id: github:personal
+    provider: github
+    environment: development
+    displayName: Personal GitHub
+    status: verified
+  - id: github:client-a
+    provider: github
+    environment: development
+    displayName: Client A GitHub
+    status: verified
   - id: supabase:thindo:staging
     provider: supabase
     environment: staging

@@ -37,6 +37,12 @@ export interface ProviderBinding {
   capabilities?: Record<string, string>;
 }
 
+export interface AgentSessionContext {
+  id: string;
+  client?: string;
+  providers?: Record<string, ProviderBinding>;
+}
+
 export interface ProfileMetadata {
   id: string;
   provider: string;
@@ -149,6 +155,7 @@ export interface ResolveInput {
   config: TokenValveConfig | string;
   adapters: AdapterDefinition[] | string;
   execution: ExecutionContext;
+  session?: AgentSessionContext;
 }
 
 export interface ResolveResult {
@@ -162,4 +169,9 @@ export interface ResolveResult {
   capability?: string;
   capabilityType?: CapabilityType;
   risk?: RiskLevel;
+  session?: {
+    id: string;
+    client?: string;
+    usedOverride: boolean;
+  };
 }

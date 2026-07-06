@@ -74,7 +74,7 @@
 - resolver 不读取、不返回真实 secret。
 - 单元测试覆盖 read/write/dangerous/unknown risk。
 
-### Phase 3: Agent Session Routing
+### Phase 3: Agent Session Routing（已完成）
 
 交付物：并发 Agent session 路由模型。
 
