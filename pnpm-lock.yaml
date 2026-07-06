@@ -38,6 +38,9 @@ importers:
       '@tokenvalve/core':
         specifier: workspace:*
         version: link:../core
+      '@tokenvalve/dashboard':
+        specifier: workspace:*
+        version: link:../dashboard
       commander:
         specifier: ^12.1.0
         version: 12.1.0
@@ -75,6 +78,10 @@ importers:
         version: 2.1.9(@types/node@22.20.0)
 
   packages/dashboard:
+    dependencies:
+      '@tokenvalve/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       tsup:
         specifier: ^8.3.5

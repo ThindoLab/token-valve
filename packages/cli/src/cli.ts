@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { renderDashboard, renderDashboardUseResult } from "@tokenvalve/dashboard";
 import {
   CustomProviderStore,
   getCoreHealth,
@@ -63,6 +64,57 @@ export function createCli(options: CliOptions = {}): Command {
           "- real resolver, secret store, MCP tools, shims, and dashboard diagnostics are implemented in later phases"
         ].join("\n") + "\n"
       );
+    });
+
+  const dashboard = program
+    .command("dashboard")
+    .description("Show and manage a redacted local TokenValve dashboard.");
+
+  dashboard
+    .command("show", { isDefault: true })
+    .description("Show a redacted local TokenValve dashboard.")
+    .option("--workspace <path>", "Workspace path.", process.cwd())
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .action((rawOptions: DashboardCommandOptions) => {
+      const workspace = path.resolve(rawOptions.workspace);
+      const inventory = createInventory(rawOptions.configDir, workspace, options.secretStore);
+      writeOut(renderDashboard({
+        workspace,
+        profiles: inventory.listProfiles(),
+        bindings: inventory.getBindings(),
+        intents: readActiveIntents(rawOptions.configDir, workspace),
+        recipes: createRecipeStore(rawOptions.configDir, workspace).list(),
+        customProviders: createCustomProviderStore(rawOptions.configDir, workspace).list(),
+        doctor: getCoreHealth(),
+        audits: {
+          available: false,
+          summary: []
+        }
+      }));
+    });
+
+  dashboard
+    .command("use")
+    .description("Safely switch the default profile for a workspace provider.")
+    .requiredOption("--workspace <path>", "Workspace path.")
+    .requiredOption("--provider <name>", "Provider name.")
+    .requiredOption("--profile <id>", "Profile id.")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--yes", "Confirm non-interactive switch.")
+    .action((rawOptions: DashboardUseCommandOptions) => {
+      const inventory = createInventory(rawOptions.configDir, rawOptions.workspace, options.secretStore);
+      const profile = inventory.setDefaultProfile({
+        profileId: rawOptions.profile,
+        provider: rawOptions.provider,
+        workspace: path.resolve(rawOptions.workspace),
+        yes: Boolean(rawOptions.yes)
+      });
+      writeOut(renderDashboardUseResult({
+        workspace: path.resolve(rawOptions.workspace),
+        provider: rawOptions.provider,
+        profile: profile.id,
+        environment: profile.environment
+      }));
     });
 
   program
@@ -824,6 +876,19 @@ interface UseCommandOptions {
 interface RevokeCommandOptions {
   configDir?: string;
   workspace?: string;
+  yes?: boolean;
+}
+
+interface DashboardCommandOptions {
+  workspace: string;
+  configDir?: string;
+}
+
+interface DashboardUseCommandOptions {
+  workspace: string;
+  provider: string;
+  profile: string;
+  configDir?: string;
   yes?: boolean;
 }
 

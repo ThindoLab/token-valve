@@ -132,6 +132,83 @@ describe("tokenvalve cli", () => {
     expect(existsSync(configDir)).toBe(false);
   });
 
+  it("shows a redacted dashboard and safely switches default profile", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "tokenvalve-cli-dashboard-"));
+    const configDir = path.join(workspace, ".tokenvalve");
+    const store = new MemorySecretStore();
+    const token = "ghp_dashboard_secret_value_1234567890";
+
+    await runCli([
+      "secret",
+      "add",
+      "--config-dir",
+      configDir,
+      "--workspace",
+      workspace,
+      "--profile",
+      "github:work",
+      "--provider",
+      "github",
+      "--environment",
+      "development",
+      "--secret-value",
+      token,
+      "--yes"
+    ], { secretStore: store });
+    await runCli([
+      "secret",
+      "add",
+      "--config-dir",
+      configDir,
+      "--profile",
+      "github:client",
+      "--provider",
+      "github",
+      "--environment",
+      "development",
+      "--secret-value",
+      "ghp_dashboard_client_value_1234567890",
+      "--yes"
+    ], { secretStore: store });
+
+    const before = await runCli([
+      "dashboard",
+      "--workspace",
+      workspace,
+      "--config-dir",
+      configDir
+    ], { secretStore: store });
+    const switched = await runCli([
+      "dashboard",
+      "use",
+      "--workspace",
+      workspace,
+      "--config-dir",
+      configDir,
+      "--provider",
+      "github",
+      "--profile",
+      "github:client",
+      "--yes"
+    ], { secretStore: store });
+    const after = await runCli([
+      "dashboard",
+      "--workspace",
+      workspace,
+      "--config-dir",
+      configDir
+    ], { secretStore: store });
+
+    expect(before).toContain("TokenValve dashboard");
+    expect(before).toContain("github -> github:work");
+    expect(before).toContain("status=unverified");
+    expect(before).not.toContain(token);
+    expect(before).not.toContain("secretLength");
+    expect(switched).toContain("global auth state: unchanged");
+    expect(after).toContain("github -> github:client");
+    expect(after).not.toContain("copy secret");
+  });
+
   it("creates and revokes human intent grants without printing secrets", async () => {
     const workspace = mkdtempSync(path.join(tmpdir(), "tokenvalve-cli-intent-"));
     const configDir = path.join(workspace, ".tokenvalve");

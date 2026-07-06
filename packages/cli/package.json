@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@tokenvalve/core": "workspace:*",
+    "@tokenvalve/dashboard": "workspace:*",
     "commander": "^12.1.0"
   },
   "devDependencies": {

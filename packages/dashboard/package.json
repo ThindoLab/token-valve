@@ -14,6 +14,9 @@
     "test": "vitest run src",
     "clean": "rm -rf dist"
   },
+  "dependencies": {
+    "@tokenvalve/core": "workspace:*"
+  },
   "devDependencies": {
     "tsup": "^8.3.5",
     "typescript": "^5.7.3",

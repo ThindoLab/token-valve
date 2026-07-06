@@ -411,7 +411,7 @@
 - 未配置风险规则的写操作被拒绝。
 - custom provider 走统一 resolver、redactor、audit。
 
-### Phase 20: Dashboard / TUI
+### Phase 20: Dashboard / TUI（已完成）
 
 交付物：`tokenvalve dashboard` 轻量可视化入口。
 
