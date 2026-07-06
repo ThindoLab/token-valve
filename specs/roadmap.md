@@ -269,7 +269,7 @@
 - 未配置 host allowlist 的 SSH 操作被拒绝。
 - production SSH 写操作需要 human intent。
 
-### Phase 13: Vercel MVP
+### Phase 13: Vercel MVP（已完成）
 
 交付物：Vercel preview/production 执行策略。
 

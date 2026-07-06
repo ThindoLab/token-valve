@@ -25,3 +25,4 @@ export * from "./github-runner.js";
 export * from "./supabase-runner.js";
 export * from "./http-runner.js";
 export * from "./ssh-runner.js";
+export * from "./vercel-runner.js";

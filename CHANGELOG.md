@@ -2,6 +2,8 @@
 
 ## 2026-07-06
 
+- Added the Phase 13 Vercel MVP with preview deploy execution, production deploy blocking, Vercel env injection, global auth command refusal, and redacted audit/output handling.
+- Added the Phase 13 feature spec covering Vercel MVP requirements, implementation plan, and validation checklist.
 - Added the Phase 12 SSH capability with controlled SSH/git-over-SSH execution, known_hosts policy enforcement, credential injection, production write blocking, and redacted audit/output handling.
 - Added the Phase 12 feature spec covering SSH capability requirements, implementation plan, and validation checklist.
 - Added the Phase 11 HTTP and curl capability layer with structured requests, allowlist enforcement, secret template injection, args-array curl execution, and redacted audit/output handling.

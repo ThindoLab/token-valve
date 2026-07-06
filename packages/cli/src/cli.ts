@@ -11,6 +11,7 @@ import {
   runHttpRequest,
   runSshCommand,
   runSupabaseCli,
+  runVercelCli,
   resolveContext,
   runScenarioInit,
   type AdapterDefinition,
@@ -552,6 +553,49 @@ export function createCli(options: CliOptions = {}): Command {
       writeOut(formatSshRun("git-ssh", result));
     });
 
+  const vercel = program
+    .command("vercel")
+    .description("Run Vercel CLI commands with per-execution TokenValve credentials.");
+
+  vercel
+    .command("run")
+    .description("Run a Vercel command with a resolved Vercel profile.")
+    .requiredOption("--workspace <path>", "Workspace path.")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--session-id <id>", "Agent session id.")
+    .option("--client <name>", "Agent client.")
+    .option("--profile <id>", "Session-scoped Vercel profile override.")
+    .option("--environment <name>", "Session-scoped environment override.")
+    .allowUnknownOption(true)
+    .argument("[args...]", "Arguments after -- are passed to vercel.")
+    .action(async (args: string[], rawOptions: VercelRunCommandOptions) => {
+      const inventory = createInventory(rawOptions.configDir, rawOptions.workspace, options.secretStore);
+      const result = await runVercelCli({
+        workspace: path.resolve(rawOptions.workspace),
+        config: {
+          profiles: inventory.listProfiles(),
+          workspaces: inventory.getBindings()
+        },
+        secretStore: options.secretStore ?? new MacOSKeychainSecretStore(),
+        args: normalizeVercelArgs(args),
+        runner: options.processRunner,
+        session: rawOptions.profile ? {
+          id: rawOptions.sessionId ?? "cli",
+          client: rawOptions.client,
+          providers: {
+            vercel: {
+              profile: rawOptions.profile,
+              environment: rawOptions.environment
+            }
+          }
+        } : rawOptions.sessionId || rawOptions.client ? {
+          id: rawOptions.sessionId ?? "cli",
+          client: rawOptions.client
+        } : undefined
+      });
+      writeOut(formatVercelRun(result));
+    });
+
   return program;
 }
 
@@ -713,6 +757,15 @@ interface GitSshRunCommandOptions {
   agentSocketField: string;
 }
 
+interface VercelRunCommandOptions {
+  workspace: string;
+  configDir?: string;
+  sessionId?: string;
+  client?: string;
+  profile?: string;
+  environment?: string;
+}
+
 function collectValues(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
@@ -773,6 +826,14 @@ function normalizeSupabaseArgs(args: string[]): string[] {
   const normalized = args[0] === "--" ? args.slice(1) : args;
   if (normalized.length === 0) {
     throw new Error("Supabase command arguments are required after --.");
+  }
+  return normalized;
+}
+
+function normalizeVercelArgs(args: string[]): string[] {
+  const normalized = args[0] === "--" ? args.slice(1) : args;
+  if (normalized.length === 0) {
+    throw new Error("Vercel command arguments are required after --.");
   }
   return normalized;
 }
@@ -1080,5 +1141,28 @@ function formatSshRun(label: "ssh" | "git-ssh", result: Awaited<ReturnType<typeo
   if (result.stderr) {
     lines.push("", "stderr:", result.stderr.replace(/\n$/, ""));
   }
+  return `${lines.join("\n")}\n`;
+}
+
+function formatVercelRun(result: Awaited<ReturnType<typeof runVercelCli>>): string {
+  const lines = [
+    "TokenValve vercel",
+    `- decision: ${result.resolve.decision}`,
+    `- reason: ${result.resolve.reason}`,
+    `- provider: ${result.resolve.provider ?? "vercel"}`,
+    `- profile: ${result.resolve.profile ?? "none"}`,
+    `- environment: ${result.resolve.environment ?? "none"}`,
+    `- risk: ${result.resolve.risk ?? "none"}`,
+    `- executed: ${result.executed ? "yes" : "no"}`,
+    `- exitCode: ${result.exitCode}`
+  ];
+
+  if (result.stdout) {
+    lines.push("", "stdout:", result.stdout.replace(/\n$/, ""));
+  }
+  if (result.stderr) {
+    lines.push("", "stderr:", result.stderr.replace(/\n$/, ""));
+  }
+
   return `${lines.join("\n")}\n`;
 }

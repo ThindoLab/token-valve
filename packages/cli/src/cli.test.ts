@@ -17,7 +17,12 @@ class FakeProcessRunner implements ProcessRunner {
 
   public async run(input: ProcessRunInput) {
     this.calls.push(input);
-    const token = input.env.GH_TOKEN ?? input.env.SUPABASE_ACCESS_TOKEN ?? input.env.SSH_AUTH_SOCK ?? input.env.GIT_SSH_COMMAND ?? "";
+    const token = input.env.GH_TOKEN
+      ?? input.env.SUPABASE_ACCESS_TOKEN
+      ?? input.env.VERCEL_TOKEN
+      ?? input.env.SSH_AUTH_SOCK
+      ?? input.env.GIT_SSH_COMMAND
+      ?? "";
     return {
       stdout: `ok ${token || input.args.join(" ")}`,
       stderr: "",
@@ -583,5 +588,70 @@ describe("tokenvalve cli", () => {
     expect(output).not.toContain(identityFile);
     expect(runner.calls[0]?.command).toBe("git");
     expect(runner.calls[0]?.env.GIT_SSH_COMMAND).toContain(identityFile);
+  });
+
+  it("runs Vercel preview deploy with injected env and redacted output", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "tokenvalve-cli-vercel-"));
+    const configDir = path.join(workspace, ".tokenvalve");
+    const store = new MemorySecretStore();
+    const runner = new FakeProcessRunner();
+    const token = "vercel_cli_token_value_123456789";
+
+    await runCli([
+      "secret",
+      "add",
+      "--config-dir",
+      configDir,
+      "--workspace",
+      workspace,
+      "--profile",
+      "vercel:team",
+      "--provider",
+      "vercel",
+      "--environment",
+      "preview",
+      "--secret-value",
+      token,
+      "--yes"
+    ], { secretStore: store });
+
+    await runCli([
+      "secret",
+      "update",
+      "vercel:team",
+      "--config-dir",
+      configDir,
+      "--status",
+      "verified",
+      "--yes"
+    ], { secretStore: store });
+
+    const output = await runCli([
+      "vercel",
+      "run",
+      "--workspace",
+      workspace,
+      "--config-dir",
+      configDir,
+      "--",
+      "deploy"
+    ], { secretStore: store, processRunner: runner });
+
+    expect(output).toContain("TokenValve vercel");
+    expect(output).toContain("decision: allow");
+    expect(output).toContain("profile: vercel:team");
+    expect(output).toContain("risk: write");
+    expect(output).not.toContain(token);
+    expect(runner.calls[0]).toMatchObject({
+      command: "vercel",
+      args: ["deploy"],
+      env: {
+        VERCEL_TOKEN: token
+      }
+    });
+  });
+
+  it("prints Vercel run help", async () => {
+    await expect(runCli(["vercel", "run", "--help"])).resolves.toContain("Run a Vercel command");
   });
 });
