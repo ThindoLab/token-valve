@@ -54,7 +54,7 @@
 - monorepo package 依赖边界清楚。
 - CI 或本地检查命令可以重复执行。
 
-### Phase 2: Core Resolution Model
+### Phase 2: Core Resolution Model（已完成）
 
 交付物：不接触真实 secret 的 core resolver。
 

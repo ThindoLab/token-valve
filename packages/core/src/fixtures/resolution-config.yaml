@@ -1,0 +1,44 @@
+workspaces:
+  - path: /workspaces/token-valve
+    providers:
+      github:
+        profile: github:thindolab
+        environment: development
+      supabase:
+        profile: supabase:thindo:staging
+        environment: staging
+      vercel:
+        profile: vercel:team-a
+        environment: production
+      openai:
+        profile: openai:work
+        capabilities:
+          llm-api-key: openai-default
+      custom-api:
+        profile: custom-api:internal
+        environment: staging
+profiles:
+  - id: github:thindolab
+    provider: github
+    environment: development
+    displayName: ThindoLab GitHub
+    status: verified
+  - id: supabase:thindo:staging
+    provider: supabase
+    environment: staging
+    displayName: Thindo Supabase Staging
+    status: verified
+  - id: vercel:team-a
+    provider: vercel
+    environment: production
+    displayName: Team A Vercel
+    status: verified
+  - id: openai:work
+    provider: openai
+    displayName: Work OpenAI
+    status: verified
+  - id: custom-api:internal
+    provider: custom-api
+    environment: staging
+    displayName: Internal Custom API
+    status: verified

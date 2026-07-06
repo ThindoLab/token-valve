@@ -1,0 +1,108 @@
+adapters:
+  - provider: github
+    capabilities:
+      - id: github-cli
+        type: cli-command
+        commands:
+          - gh
+      - id: github-api
+        type: http-request
+        allowedHosts:
+          - api.github.com
+        pathPrefixes:
+          - /
+    riskRules:
+      - capability: github-cli
+        match:
+          - repo
+          - view
+        risk: read
+      - capability: github-cli
+        match:
+          - repo
+          - delete
+        risk: dangerous
+      - capability: github-api
+        method: GET
+        pathPrefix: /
+        risk: read
+  - provider: supabase
+    capabilities:
+      - id: supabase-cli
+        type: cli-command
+        commands:
+          - supabase
+      - id: management-api
+        type: http-request
+        allowedHosts:
+          - api.supabase.com
+        pathPrefixes:
+          - /v1
+    riskRules:
+      - capability: supabase-cli
+        match:
+          - projects
+          - list
+        risk: read
+      - capability: supabase-cli
+        match:
+          - db
+          - push
+        risk: write
+      - capability: supabase-cli
+        match:
+          - db
+          - reset
+        risk: dangerous
+      - capability: management-api
+        method: GET
+        pathPrefix: /v1/projects
+        risk: read
+      - capability: management-api
+        method: POST
+        pathPrefix: /v1/projects
+        risk: write
+  - provider: vercel
+    capabilities:
+      - id: vercel-cli
+        type: cli-command
+        commands:
+          - vercel
+    riskRules:
+      - capability: vercel-cli
+        match:
+          - deploy
+        risk: write
+      - capability: vercel-cli
+        match:
+          - deploy
+          - --prod
+        risk: production_deploy
+  - provider: openai
+    capabilities:
+      - id: openai-default
+        type: llm-api-key
+        provider: openai
+        useCases:
+          - code-generation
+          - review
+    riskRules:
+      - capability: openai-default
+        useCase: code-generation
+        risk: read
+      - capability: openai-default
+        useCase: review
+        risk: read
+  - provider: custom-api
+    capabilities:
+      - id: internal-status
+        type: http-request
+        allowedHosts:
+          - internal.example.test
+        pathPrefixes:
+          - /status
+    riskRules:
+      - capability: internal-status
+        method: GET
+        pathPrefix: /status
+        risk: read
