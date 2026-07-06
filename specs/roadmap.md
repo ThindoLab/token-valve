@@ -438,7 +438,7 @@
 
 目标：补齐兼容策略、诊断能力、文档和发布路径，让外部 macOS 用户可以真实使用。
 
-### Phase 21: Global Switch Compatibility
+### Phase 21: Global Switch Compatibility（已完成）
 
 交付物：显式 opt-in 的 global-switch execution mode。
 

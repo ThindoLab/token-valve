@@ -74,7 +74,10 @@ export interface AdapterDefinition {
   provider: string;
   capabilities: CapabilityDefinition[];
   riskRules: RiskRule[];
+  executionModes?: ExecutionMode[];
 }
+
+export type ExecutionMode = "env-injection" | "isolated-config" | "global-switch";
 
 export type CapabilityDefinition =
   | CliCapabilityDefinition

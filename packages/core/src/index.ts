@@ -30,3 +30,4 @@ export * from "./human-intent.js";
 export * from "./recipe-store.js";
 export * from "./custom-provider.js";
 export * from "./script-runner.js";
+export * from "./global-switch.js";
