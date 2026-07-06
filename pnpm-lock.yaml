@@ -103,7 +103,14 @@ importers:
         version: 2.1.9(@types/node@22.20.0)
 
   packages/shims:
+    dependencies:
+      '@tokenvalve/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
+      '@types/node':
+        specifier: ^22.10.7
+        version: 22.20.0
       tsup:
         specifier: ^8.3.5
         version: 8.5.1(postcss@8.5.16)(tsx@4.23.0)(typescript@5.9.3)(yaml@2.9.0)

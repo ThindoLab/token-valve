@@ -286,7 +286,7 @@
 - production deploy 没有授权时被拒绝。
 - Vercel token 不出现在输出或审计中。
 
-### Phase 14: Shim Execution
+### Phase 14: Shim Execution（已完成）
 
 交付物：PATH shims 与真实 binary 转发。
 

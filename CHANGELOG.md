@@ -2,6 +2,8 @@
 
 ## 2026-07-06
 
+- Added the Phase 14 shim execution layer with gh/supabase/vercel shim support, real binary discovery, recursion avoidance, args-array forwarding, child-scoped env injection, and redacted output handling.
+- Added the Phase 14 feature spec covering shim execution requirements, implementation plan, and validation checklist.
 - Added the Phase 13 Vercel MVP with preview deploy execution, production deploy blocking, Vercel env injection, global auth command refusal, and redacted audit/output handling.
 - Added the Phase 13 feature spec covering Vercel MVP requirements, implementation plan, and validation checklist.
 - Added the Phase 12 SSH capability with controlled SSH/git-over-SSH execution, known_hosts policy enforcement, credential injection, production write blocking, and redacted audit/output handling.
