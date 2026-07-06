@@ -2,6 +2,8 @@
 
 ## 2026-07-06
 
+- Added the Phase 6 scenario init command with workspace detection, explicit provider selection, incremental provider metadata, safe YAML generation, and dry-run routing previews.
+- Added the Phase 6 feature spec covering scenario init requirements, implementation plan, and validation checklist.
 - Added the Phase 5 secret store interface with an in-memory test double, macOS Keychain backend, CRUD APIs, and secret-safe error handling.
 - Added the Phase 5 feature spec covering secret store requirements, implementation plan, and validation checklist.
 - Added the Phase 4 redaction and audit event shaping layer with known-secret masking, token pattern redaction, safe return truncation, and structured audit summaries.

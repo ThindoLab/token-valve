@@ -19,3 +19,4 @@ export * from "./types.js";
 export * from "./redactor.js";
 export * from "./audit.js";
 export * from "./secret-store.js";
+export * from "./init.js";

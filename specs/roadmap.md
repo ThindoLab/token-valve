@@ -129,7 +129,7 @@
 - 测试环境不依赖真实 Keychain。
 - 明文 secret 不出现在 repo 文件、配置 YAML 或日志中。
 
-### Phase 6: 场景化 Init
+### Phase 6: 场景化 Init（已完成）
 
 交付物：`tokenvalve init` 场景化向导。
 
