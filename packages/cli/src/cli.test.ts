@@ -17,7 +17,7 @@ class FakeProcessRunner implements ProcessRunner {
 
   public async run(input: ProcessRunInput) {
     this.calls.push(input);
-    const token = input.env.GH_TOKEN ?? input.env.SUPABASE_ACCESS_TOKEN ?? "";
+    const token = input.env.GH_TOKEN ?? input.env.SUPABASE_ACCESS_TOKEN ?? input.env.SSH_AUTH_SOCK ?? input.env.GIT_SSH_COMMAND ?? "";
     return {
       stdout: `ok ${token || input.args.join(" ")}`,
       stderr: "",
@@ -60,7 +60,9 @@ async function runCli(
     await program.parseAsync(["node", "tokenvalve", ...args]);
   } catch (error) {
     if (!(error instanceof CommanderError) || error.exitCode !== 0) {
-      throw error;
+      if (!(error instanceof Error) || !error.message.includes('process.exit unexpectedly called with "0"')) {
+        throw error;
+      }
     }
   }
 
@@ -522,5 +524,64 @@ describe("tokenvalve cli", () => {
       "--header",
       `Authorization: Bearer ${token}`
     ]);
+  });
+
+  it("prints SSH command help", async () => {
+    await expect(runCli(["ssh", "run", "--help"])).resolves.toContain("Run an allowlisted SSH command");
+    await expect(runCli(["git-ssh", "run", "--help"])).resolves.toContain("Run an allowlisted git over SSH operation");
+  });
+
+  it("runs git over SSH with scoped GIT_SSH_COMMAND and redacted output", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "tokenvalve-cli-git-ssh-"));
+    const configDir = path.join(workspace, ".tokenvalve");
+    const store = new MemorySecretStore();
+    const runner = new FakeProcessRunner();
+    const identityFile = "/Users/xing/.ssh/tokenvalve_cli";
+
+    await runCli([
+      "secret",
+      "add",
+      "--config-dir",
+      configDir,
+      "--workspace",
+      workspace,
+      "--profile",
+      "github:ssh",
+      "--provider",
+      "github",
+      "--environment",
+      "development",
+      "--secret-value",
+      identityFile,
+      "--field",
+      "identity_file",
+      "--yes"
+    ], { secretStore: store });
+
+    const output = await runCli([
+      "git-ssh",
+      "run",
+      "--workspace",
+      workspace,
+      "--config-dir",
+      configDir,
+      "--provider",
+      "github",
+      "--remote-url",
+      "git@github.com:ThindoLab/token-valve.git",
+      "--operation",
+      "fetch",
+      "--known-hosts-policy",
+      "strict",
+      "--known-hosts-file",
+      "/Users/xing/.ssh/known_hosts"
+    ], { secretStore: store, processRunner: runner });
+
+    expect(output).toContain("TokenValve git-ssh");
+    expect(output).toContain("decision: allow");
+    expect(output).toContain("profile: github:ssh");
+    expect(output).not.toContain(identityFile);
+    expect(runner.calls[0]?.command).toBe("git");
+    expect(runner.calls[0]?.env.GIT_SSH_COMMAND).toContain(identityFile);
   });
 });

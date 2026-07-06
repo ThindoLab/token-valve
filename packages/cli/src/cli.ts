@@ -4,15 +4,18 @@ import path from "node:path";
 import {
   getCoreHealth,
   runCurlTemplate,
+  runGitSsh,
   MacOSKeychainSecretStore,
   ProfileInventory,
   runGitHubCli,
   runHttpRequest,
+  runSshCommand,
   runSupabaseCli,
   resolveContext,
   runScenarioInit,
   type AdapterDefinition,
   type HttpRunner,
+  type KnownHostsPolicy,
   type ProcessRunner,
   type ProfileMetadata,
   type ProfileStatus,
@@ -459,6 +462,96 @@ export function createCli(options: CliOptions = {}): Command {
       writeOut(formatCurlRun(result));
     });
 
+  const ssh = program
+    .command("ssh")
+    .description("Run SSH commands with per-execution TokenValve credentials.");
+
+  ssh
+    .command("run")
+    .description("Run an allowlisted SSH command without changing global SSH state.")
+    .requiredOption("--workspace <path>", "Workspace path.")
+    .requiredOption("--host <host>", "SSH host.")
+    .option("--provider <name>", "Provider name.", "github")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--user <name>", "SSH user.")
+    .option("--port <number>", "SSH port.", parseInteger)
+    .option("--operation <name>", "Structured operation.", "connect")
+    .option("--known-hosts-policy <mode>", "Known hosts policy: strict, accept-new, or off.")
+    .option("--known-hosts-file <path>", "Known hosts file for strict or accept-new policy.")
+    .option("--identity-file-field <field>", "Secret field containing an identity file path.", "identity_file")
+    .option("--private-key-field <field>", "Secret field containing private key content.", "private_key")
+    .option("--agent-socket-field <field>", "Secret field containing SSH_AUTH_SOCK.", "agent_socket")
+    .allowUnknownOption(true)
+    .argument("[command...]", "Remote command after --.")
+    .action(async (command: string[], rawOptions: SshRunCommandOptions) => {
+      const inventory = createInventory(rawOptions.configDir, rawOptions.workspace, options.secretStore);
+      const result = await runSshCommand({
+        workspace: path.resolve(rawOptions.workspace),
+        config: {
+          profiles: inventory.listProfiles(),
+          workspaces: inventory.getBindings()
+        },
+        secretStore: options.secretStore ?? new MacOSKeychainSecretStore(),
+        provider: rawOptions.provider,
+        host: rawOptions.host,
+        user: rawOptions.user,
+        port: rawOptions.port,
+        operation: rawOptions.operation,
+        command: normalizeOptionalPassthroughArgs(command),
+        knownHosts: parseKnownHostsPolicy(rawOptions.knownHostsPolicy, rawOptions.knownHostsFile),
+        credentialFields: {
+          identityFileField: rawOptions.identityFileField,
+          privateKeyField: rawOptions.privateKeyField,
+          agentSocketField: rawOptions.agentSocketField
+        },
+        runner: options.processRunner
+      });
+      writeOut(formatSshRun("ssh", result));
+    });
+
+  const gitSsh = program
+    .command("git-ssh")
+    .description("Run git over SSH with per-execution TokenValve credentials.");
+
+  gitSsh
+    .command("run")
+    .description("Run an allowlisted git over SSH operation.")
+    .requiredOption("--workspace <path>", "Workspace path.")
+    .requiredOption("--remote-url <url>", "Git SSH remote URL.")
+    .requiredOption("--operation <name>", "Structured git operation, for example fetch, ls-remote, or push.")
+    .option("--provider <name>", "Provider name.", "github")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--known-hosts-policy <mode>", "Known hosts policy: strict, accept-new, or off.")
+    .option("--known-hosts-file <path>", "Known hosts file for strict or accept-new policy.")
+    .option("--identity-file-field <field>", "Secret field containing an identity file path.", "identity_file")
+    .option("--private-key-field <field>", "Secret field containing private key content.", "private_key")
+    .option("--agent-socket-field <field>", "Secret field containing SSH_AUTH_SOCK.", "agent_socket")
+    .allowUnknownOption(true)
+    .argument("[args...]", "Git arguments after --. Defaults from --operation when omitted.")
+    .action(async (args: string[], rawOptions: GitSshRunCommandOptions) => {
+      const inventory = createInventory(rawOptions.configDir, rawOptions.workspace, options.secretStore);
+      const result = await runGitSsh({
+        workspace: path.resolve(rawOptions.workspace),
+        config: {
+          profiles: inventory.listProfiles(),
+          workspaces: inventory.getBindings()
+        },
+        secretStore: options.secretStore ?? new MacOSKeychainSecretStore(),
+        provider: rawOptions.provider,
+        remoteUrl: rawOptions.remoteUrl,
+        operation: rawOptions.operation,
+        gitArgs: normalizeOptionalPassthroughArgs(args),
+        knownHosts: parseKnownHostsPolicy(rawOptions.knownHostsPolicy, rawOptions.knownHostsFile),
+        credentialFields: {
+          identityFileField: rawOptions.identityFileField,
+          privateKeyField: rawOptions.privateKeyField,
+          agentSocketField: rawOptions.agentSocketField
+        },
+        runner: options.processRunner
+      });
+      writeOut(formatSshRun("git-ssh", result));
+    });
+
   return program;
 }
 
@@ -592,8 +685,44 @@ interface CurlRunCommandOptions {
   body?: string;
 }
 
+interface SshRunCommandOptions {
+  workspace: string;
+  host: string;
+  provider: string;
+  configDir?: string;
+  user?: string;
+  port?: number;
+  operation: string;
+  knownHostsPolicy?: string;
+  knownHostsFile?: string;
+  identityFileField: string;
+  privateKeyField: string;
+  agentSocketField: string;
+}
+
+interface GitSshRunCommandOptions {
+  workspace: string;
+  remoteUrl: string;
+  operation: string;
+  provider: string;
+  configDir?: string;
+  knownHostsPolicy?: string;
+  knownHostsFile?: string;
+  identityFileField: string;
+  privateKeyField: string;
+  agentSocketField: string;
+}
+
 function collectValues(value: string, previous: string[]): string[] {
   return [...previous, value];
+}
+
+function parseInteger(value: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`Expected a positive integer: ${value}`);
+  }
+  return parsed;
 }
 
 function normalizeProviders(values: string[]): SupportedInitProvider[] {
@@ -646,6 +775,27 @@ function normalizeSupabaseArgs(args: string[]): string[] {
     throw new Error("Supabase command arguments are required after --.");
   }
   return normalized;
+}
+
+function normalizeOptionalPassthroughArgs(args: string[]): string[] | undefined {
+  const normalized = args[0] === "--" ? args.slice(1) : args;
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function parseKnownHostsPolicy(mode: string | undefined, file: string | undefined): KnownHostsPolicy | undefined {
+  if (!mode) {
+    return undefined;
+  }
+  if (mode === "strict") {
+    return { mode, file: file ?? "" };
+  }
+  if (mode === "accept-new") {
+    return file ? { mode, file } : { mode };
+  }
+  if (mode === "off") {
+    return { mode };
+  }
+  throw new Error(`Unsupported known_hosts policy: ${mode}`);
 }
 
 function isLlmProfile(profile: ProfileMetadata): boolean {
@@ -899,6 +1049,27 @@ function formatCurlRun(result: Awaited<ReturnType<typeof runCurlTemplate>>): str
     `- reason: ${result.resolve.reason}`,
     `- provider: ${result.resolve.provider ?? "none"}`,
     `- profile: ${result.resolve.profile ?? "none"}`,
+    `- risk: ${result.resolve.risk ?? "none"}`,
+    `- executed: ${result.executed ? "yes" : "no"}`,
+    `- exitCode: ${result.exitCode}`
+  ];
+  if (result.stdout) {
+    lines.push("", "stdout:", result.stdout.replace(/\n$/, ""));
+  }
+  if (result.stderr) {
+    lines.push("", "stderr:", result.stderr.replace(/\n$/, ""));
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function formatSshRun(label: "ssh" | "git-ssh", result: Awaited<ReturnType<typeof runSshCommand>>): string {
+  const lines = [
+    `TokenValve ${label}`,
+    `- decision: ${result.resolve.decision}`,
+    `- reason: ${result.resolve.reason}`,
+    `- provider: ${result.resolve.provider ?? "none"}`,
+    `- profile: ${result.resolve.profile ?? "none"}`,
+    `- environment: ${result.resolve.environment ?? "none"}`,
     `- risk: ${result.resolve.risk ?? "none"}`,
     `- executed: ${result.executed ? "yes" : "no"}`,
     `- exitCode: ${result.exitCode}`

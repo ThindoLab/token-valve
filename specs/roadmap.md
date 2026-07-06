@@ -250,7 +250,7 @@
 - 未配置 risk rules 的写请求 fail closed。
 - 非 allowlist host 被拒绝。
 
-### Phase 12: SSH Capability
+### Phase 12: SSH Capability（已完成）
 
 交付物：SSH 与 git over SSH credential brokering。
 
