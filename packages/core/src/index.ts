@@ -16,3 +16,5 @@ export function getCoreHealth(): HealthCheck {
 
 export * from "./resolver.js";
 export * from "./types.js";
+export * from "./redactor.js";
+export * from "./audit.js";

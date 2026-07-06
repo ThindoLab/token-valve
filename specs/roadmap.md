@@ -91,7 +91,7 @@
 - session 缺失时仍能按 workspace binding 做确定性解析。
 - 测试证明不依赖 `gh auth status` 或全局 CLI 当前状态。
 
-### Phase 4: 脱敏与审计事件
+### Phase 4: 脱敏与审计事件（已完成）
 
 交付物：redaction 与 audit event shaping。
 

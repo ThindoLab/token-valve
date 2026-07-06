@@ -2,6 +2,8 @@
 
 ## 2026-07-06
 
+- Added the Phase 4 redaction and audit event shaping layer with known-secret masking, token pattern redaction, safe return truncation, and structured audit summaries.
+- Added the Phase 4 feature spec covering redaction requirements, implementation plan, and validation checklist.
 - Added the Phase 3 agent session routing model with session-scoped provider overrides and concurrent GitHub profile resolution tests.
 - Added the Phase 3 feature spec covering session routing requirements, implementation plan, and validation checklist.
 - Added the Phase 2 core resolution model with YAML config/adapter loading, workspace canonicalization, fail-closed decisions, risk matching, and provider fixtures.
