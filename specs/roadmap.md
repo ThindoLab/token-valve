@@ -193,7 +193,7 @@
 
 目标：把 TokenValve 从“密钥管理器”推进到“受控执行网关”。此阶段结束时，真实 CLI、HTTP/curl、SSH 和 high-risk intent 都能走同一套解析、注入、审计和脱敏。
 
-### Phase 9: GitHub MVP
+### Phase 9: GitHub MVP（已完成）
 
 交付物：GitHub 多 profile 执行能力。
 

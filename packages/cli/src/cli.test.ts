@@ -3,12 +3,32 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { CommanderError } from "commander";
-import { MemorySecretStore } from "@tokenvalve/core";
+import { MemorySecretStore, type ProcessRunInput, type ProcessRunner } from "@tokenvalve/core";
 import { createCli } from "./cli.js";
 
-async function runCli(args: string[], options: { secretStore?: MemorySecretStore } = {}): Promise<string> {
+class FakeProcessRunner implements ProcessRunner {
+  public readonly calls: ProcessRunInput[] = [];
+
+  public async run(input: ProcessRunInput) {
+    this.calls.push(input);
+    return {
+      stdout: `ok ${input.env.GH_TOKEN}`,
+      stderr: "",
+      exitCode: 0
+    };
+  }
+}
+
+async function runCli(
+  args: string[],
+  options: { secretStore?: MemorySecretStore; processRunner?: ProcessRunner } = {}
+): Promise<string> {
   const output: string[] = [];
-  const program = createCli({ writeOut: (value) => output.push(value), secretStore: options.secretStore });
+  const program = createCli({
+    writeOut: (value) => output.push(value),
+    secretStore: options.secretStore,
+    processRunner: options.processRunner
+  });
 
   program.exitOverride();
   program.configureOutput({
@@ -265,5 +285,56 @@ describe("tokenvalve cli", () => {
     expect(resolveOutput).toContain("decision: allow");
     expect(resolveOutput).toContain("profile: openai:work");
     expect(resolveOutput).not.toContain(openaiKey);
+  });
+
+  it("runs GitHub commands with injected token and redacted output", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "tokenvalve-cli-github-"));
+    const configDir = path.join(workspace, ".tokenvalve");
+    const store = new MemorySecretStore();
+    const runner = new FakeProcessRunner();
+    const token = "ghp_cli_github_token_value_123456";
+
+    await runCli([
+      "secret",
+      "add",
+      "--config-dir",
+      configDir,
+      "--workspace",
+      workspace,
+      "--profile",
+      "github:work",
+      "--provider",
+      "github",
+      "--environment",
+      "development",
+      "--secret-value",
+      token,
+      "--yes"
+    ], { secretStore: store });
+
+    const output = await runCli([
+      "github",
+      "run",
+      "--workspace",
+      workspace,
+      "--config-dir",
+      configDir,
+      "--",
+      "repo",
+      "view"
+    ], { secretStore: store, processRunner: runner });
+
+    expect(output).toContain("TokenValve github");
+    expect(output).toContain("decision: allow");
+    expect(output).toContain("profile: github:work");
+    expect(output).not.toContain(token);
+    expect(runner.calls[0]).toMatchObject({
+      command: "gh",
+      args: ["repo", "view"],
+      env: {
+        GH_TOKEN: token,
+        GITHUB_TOKEN: token
+      }
+    });
   });
 });

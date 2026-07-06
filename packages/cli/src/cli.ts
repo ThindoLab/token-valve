@@ -5,9 +5,11 @@ import {
   getCoreHealth,
   MacOSKeychainSecretStore,
   ProfileInventory,
+  runGitHubCli,
   resolveContext,
   runScenarioInit,
   type AdapterDefinition,
+  type ProcessRunner,
   type ProfileMetadata,
   type ProfileStatus,
   type SecretStore,
@@ -18,6 +20,7 @@ import packageJson from "../package.json" with { type: "json" };
 export interface CliOptions {
   writeOut?: (value: string) => void;
   secretStore?: SecretStore;
+  processRunner?: ProcessRunner;
 }
 
 export function createCli(options: CliOptions = {}): Command {
@@ -288,6 +291,48 @@ export function createCli(options: CliOptions = {}): Command {
       writeOut(formatLlmResolve(result));
     });
 
+  const github = program
+    .command("github")
+    .description("Run GitHub CLI commands with per-execution TokenValve credentials.");
+
+  github
+    .command("run")
+    .description("Run a low-risk gh command with a resolved GitHub profile.")
+    .requiredOption("--workspace <path>", "Workspace path.")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--session-id <id>", "Agent session id.")
+    .option("--client <name>", "Agent client.")
+    .option("--profile <id>", "Session-scoped GitHub profile override.")
+    .allowUnknownOption(true)
+    .argument("[args...]", "Arguments after -- are passed to gh.")
+    .action(async (args: string[], rawOptions: GithubRunCommandOptions) => {
+      const inventory = createInventory(rawOptions.configDir, rawOptions.workspace, options.secretStore);
+      const result = await runGitHubCli({
+        workspace: path.resolve(rawOptions.workspace),
+        config: {
+          profiles: inventory.listProfiles(),
+          workspaces: inventory.getBindings()
+        },
+        secretStore: options.secretStore ?? new MacOSKeychainSecretStore(),
+        args: normalizeGithubArgs(args),
+        runner: options.processRunner,
+        session: rawOptions.profile ? {
+          id: rawOptions.sessionId ?? "cli",
+          client: rawOptions.client,
+          providers: {
+            github: {
+              profile: rawOptions.profile,
+              environment: "development"
+            }
+          }
+        } : rawOptions.sessionId || rawOptions.client ? {
+          id: rawOptions.sessionId ?? "cli",
+          client: rawOptions.client
+        } : undefined
+      });
+      writeOut(formatGithubRun(result));
+    });
+
   return program;
 }
 
@@ -380,6 +425,14 @@ interface LlmResolveCommandOptions {
   useCase: string;
 }
 
+interface GithubRunCommandOptions {
+  workspace: string;
+  configDir?: string;
+  sessionId?: string;
+  client?: string;
+  profile?: string;
+}
+
 function collectValues(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
@@ -418,6 +471,14 @@ function normalizeLlmProvider(value: string): string {
     return value;
   }
   throw new Error(`Unsupported LLM provider: ${value}`);
+}
+
+function normalizeGithubArgs(args: string[]): string[] {
+  const normalized = args[0] === "--" ? args.slice(1) : args;
+  if (normalized.length === 0) {
+    throw new Error("GitHub command arguments are required after --.");
+  }
+  return normalized;
 }
 
 function isLlmProfile(profile: ProfileMetadata): boolean {
@@ -552,4 +613,26 @@ function formatLlmResolve(result: ReturnType<typeof resolveContext>): string {
     `- capability: ${result.capability ?? "none"}`,
     `- risk: ${result.risk ?? "none"}`
   ].join("\n") + "\n";
+}
+
+function formatGithubRun(result: Awaited<ReturnType<typeof runGitHubCli>>): string {
+  const lines = [
+    "TokenValve github",
+    `- decision: ${result.resolve.decision}`,
+    `- reason: ${result.resolve.reason}`,
+    `- provider: ${result.resolve.provider ?? "github"}`,
+    `- profile: ${result.resolve.profile ?? "none"}`,
+    `- risk: ${result.resolve.risk ?? "none"}`,
+    `- executed: ${result.executed ? "yes" : "no"}`,
+    `- exitCode: ${result.exitCode}`
+  ];
+
+  if (result.stdout) {
+    lines.push("", "stdout:", result.stdout.replace(/\n$/, ""));
+  }
+  if (result.stderr) {
+    lines.push("", "stderr:", result.stderr.replace(/\n$/, ""));
+  }
+
+  return `${lines.join("\n")}\n`;
 }
