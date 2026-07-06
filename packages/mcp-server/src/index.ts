@@ -3,6 +3,7 @@ import {
   HumanIntentStore,
   MemorySecretStore,
   ProfileInventory,
+  RecipeStore,
   SSH_ADAPTER,
   SUPABASE_ADAPTER,
   VERCEL_ADAPTER,
@@ -20,6 +21,7 @@ import {
   type HttpRunner,
   type ProcessRunner,
   type ProfileMetadata,
+  type RecipeBinding,
   type RiskLevel,
   type SecretStore,
   type TokenValveConfig
@@ -187,7 +189,7 @@ export class TokenValveMcpServer {
       case "recipe_save":
         return this.recipeSave(input);
       case "recipe_list":
-        return { ok: true, data: { recipes: this.recipes } };
+        return { ok: true, data: { recipes: this.configDir ? new RecipeStore({ configDir: this.configDir }).list() : this.recipes } };
       case "ui_open":
         return { ok: true, data: { opened: false, mode: "metadata-only", message: "UI open is deferred to a later dashboard phase." } };
       case "audit_list":
@@ -325,13 +327,23 @@ export class TokenValveMcpServer {
   }
 
   private recipeSave(input: Record<string, unknown>): McpToolResult {
+    const binding = parseRecipeBinding(input.binding);
+    if (this.configDir) {
+      const recipe = new RecipeStore({ configDir: this.configDir }).save({
+        id: requireString(input.id, "id"),
+        binding,
+        riskRules: Array.isArray(input.riskRules) ? input.riskRules as never : undefined,
+        validationSteps: Array.isArray(input.validationSteps) ? input.validationSteps as never : undefined
+      });
+      return { ok: true, data: { recipe } };
+    }
     const recipe: RecipeMetadata = {
       id: requireString(input.id, "id"),
       status: "draft",
-      provider: optionalString(input.provider),
-      profile: optionalString(input.profile),
-      capability: optionalString(input.capability),
-      workspace: optionalString(input.workspace),
+      provider: binding.provider,
+      profile: binding.profile,
+      capability: binding.capability,
+      workspace: binding.workspace,
       createdAt: new Date().toISOString()
     };
     this.recipes.push(recipe);
@@ -443,4 +455,22 @@ function normalizeRisk(value: string): RiskLevel {
     return value;
   }
   throw new Error(`Unsupported risk: ${value}`);
+}
+
+function parseRecipeBinding(value: unknown): RecipeBinding {
+  const binding = requireRecordObject(value, "binding");
+  return {
+    workspace: requireString(binding.workspace, "binding.workspace"),
+    provider: requireString(binding.provider, "binding.provider"),
+    profile: requireString(binding.profile, "binding.profile"),
+    environment: optionalString(binding.environment),
+    capability: requireString(binding.capability, "binding.capability")
+  };
+}
+
+function requireRecordObject(value: unknown, label: string): Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new Error(`${label} must be an object.`);
+  }
+  return value;
 }

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { CommanderError } from "commander";
 import {
   MemorySecretStore,
+  RecipeStore,
   type HttpRunInput,
   type HttpRunner,
   type ProcessRunInput,
@@ -356,6 +357,61 @@ describe("tokenvalve cli", () => {
     expect(resolveOutput).toContain("decision: allow");
     expect(resolveOutput).toContain("profile: openai:work");
     expect(resolveOutput).not.toContain(openaiKey);
+  });
+
+  it("lists, shows, and tests local recipes", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "tokenvalve-cli-recipe-"));
+    const configDir = path.join(workspace, ".tokenvalve");
+    const store = new MemorySecretStore();
+
+    await runCli([
+      "secret",
+      "add",
+      "--config-dir",
+      configDir,
+      "--workspace",
+      workspace,
+      "--profile",
+      "github:work",
+      "--provider",
+      "github",
+      "--environment",
+      "development",
+      "--secret-value",
+      "ghp_recipe_cli_secret",
+      "--yes"
+    ], { secretStore: store });
+
+    new RecipeStore({ configDir }).save({
+      id: "github-repo-view",
+      binding: {
+        workspace,
+        provider: "github",
+        profile: "github:work",
+        environment: "development",
+        capability: "github-cli"
+      },
+      riskRules: [{ capability: "github-cli", match: ["repo", "view"], risk: "read" }]
+    });
+
+    const listOutput = await runCli(["recipe", "list", "--config-dir", configDir], { secretStore: store });
+    expect(listOutput).toContain("github-repo-view");
+    expect(listOutput).toContain("status=draft");
+    expect(listOutput).not.toContain("ghp_recipe_cli_secret");
+
+    const showOutput = await runCli(["recipe", "show", "github-repo-view", "--config-dir", configDir], { secretStore: store });
+    expect(showOutput).toContain("TokenValve recipe");
+    expect(showOutput).toContain("provider: github");
+
+    const testOutput = await runCli([
+      "recipe",
+      "test",
+      "github-repo-view",
+      "--config-dir",
+      configDir
+    ], { secretStore: store });
+    expect(testOutput).toContain("status: verified");
+    expect(testOutput).not.toContain("ghp_recipe_cli_secret");
   });
 
   it("runs GitHub commands with injected token and redacted output", async () => {

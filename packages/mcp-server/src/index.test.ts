@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
   MemorySecretStore,
   type AdapterDefinition,
@@ -277,5 +280,39 @@ describe("TokenValveMcpServer", () => {
     });
     expect(accepted.ok).toBe(true);
     expect(JSON.stringify(accepted.data)).not.toContain("ghp_should_not_be_here");
+  });
+
+  it("persists recipe_save and recipe_list without secrets", async () => {
+    const configDir = mkdtempSync(path.join(tmpdir(), "tokenvalve-mcp-recipes-"));
+    const server = new TokenValveMcpServer({ configDir, config: makeConfig() });
+    const saved = await server.callTool("recipe_save", {
+      id: "github-repo-view",
+      binding: {
+        workspace: WORKSPACE,
+        provider: "github",
+        profile: "github:work",
+        environment: "development",
+        capability: "github-cli"
+      },
+      riskRules: [{ capability: "github-cli", match: ["repo", "view"], risk: "read" }]
+    });
+    const listed = await server.callTool("recipe_list");
+
+    expect(saved.ok).toBe(true);
+    expect(listed.ok).toBe(true);
+    expect(JSON.stringify(listed.data)).toContain("github-repo-view");
+    expect(readFileSync(path.join(configDir, "recipes.yaml"), "utf8")).not.toMatch(/secretValue|apiKey|privateKey|ghp_/i);
+
+    const rejected = await server.callTool("recipe_save", {
+      id: "bad",
+      binding: {
+        workspace: WORKSPACE,
+        provider: "github",
+        profile: "github:work",
+        capability: "github-cli"
+      },
+      validationSteps: [{ id: "bad", description: "bad", command: ["gh", "token=ghp_bad_secret_1234567890"] }]
+    });
+    expect(rejected.ok).toBe(false);
   });
 });

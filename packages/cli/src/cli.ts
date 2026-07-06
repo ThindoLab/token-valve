@@ -8,6 +8,7 @@ import {
   runGitSsh,
   MacOSKeychainSecretStore,
   ProfileInventory,
+  RecipeStore,
   runGitHubCli,
   runHttpRequest,
   runSshCommand,
@@ -341,6 +342,45 @@ export function createCli(options: CliOptions = {}): Command {
         }
       });
       writeOut(formatLlmResolve(result));
+    });
+
+  const recipe = program
+    .command("recipe")
+    .description("Manage verified reusable TokenValve recipes.");
+
+  recipe
+    .command("list")
+    .description("List local recipes.")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--workspace <path>", "Workspace path used to locate the default config directory.")
+    .action((rawOptions: RecipeListCommandOptions) => {
+      writeOut(formatRecipeList(createRecipeStore(rawOptions.configDir, rawOptions.workspace).list()));
+    });
+
+  recipe
+    .command("show")
+    .description("Show a local recipe.")
+    .argument("<recipe>", "Recipe id.")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--workspace <path>", "Workspace path used to locate the default config directory.")
+    .action((recipeId: string, rawOptions: RecipeShowCommandOptions) => {
+      writeOut(formatRecipeShow(createRecipeStore(rawOptions.configDir, rawOptions.workspace).show(recipeId)));
+    });
+
+  recipe
+    .command("test")
+    .description("Test a local recipe against configured metadata.")
+    .argument("<recipe>", "Recipe id.")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--workspace <path>", "Workspace path used to locate the default config directory.")
+    .action((recipeId: string, rawOptions: RecipeTestCommandOptions) => {
+      const store = createRecipeStore(rawOptions.configDir, rawOptions.workspace);
+      const inventory = createInventory(rawOptions.configDir, rawOptions.workspace, options.secretStore);
+      const result = store.test(recipeId, {
+        profiles: inventory.listProfiles(),
+        workspaces: inventory.getBindings()
+      });
+      writeOut(formatRecipeShow(result));
     });
 
   const github = program
@@ -753,6 +793,21 @@ interface LlmResolveCommandOptions {
   useCase: string;
 }
 
+interface RecipeListCommandOptions {
+  configDir?: string;
+  workspace?: string;
+}
+
+interface RecipeShowCommandOptions {
+  configDir?: string;
+  workspace?: string;
+}
+
+interface RecipeTestCommandOptions {
+  configDir?: string;
+  workspace?: string;
+}
+
 interface GithubRunCommandOptions {
   workspace: string;
   configDir?: string;
@@ -867,6 +922,12 @@ function createInventory(configDir: string | undefined, workspace: string | unde
 
 function createIntentStore(configDir: string | undefined, workspace: string | undefined): HumanIntentStore {
   return new HumanIntentStore({
+    configDir: resolveConfigDir(configDir, workspace)
+  });
+}
+
+function createRecipeStore(configDir: string | undefined, workspace: string | undefined): RecipeStore {
+  return new RecipeStore({
     configDir: resolveConfigDir(configDir, workspace)
   });
 }
@@ -1077,6 +1138,64 @@ function formatIntentChanged(action: string, intent: {
     `- expiresAt: ${intent.expiresAt}`,
     "- secret value: never stored in intent"
   ].join("\n") + "\n";
+}
+
+function formatRecipeList(recipes: Array<{
+  id: string;
+  status: string;
+  binding: {
+    provider: string;
+    profile: string;
+    capability: string;
+    workspace: string;
+  };
+}>): string {
+  const lines = ["TokenValve recipes"];
+  if (recipes.length === 0) {
+    lines.push("- none");
+    return `${lines.join("\n")}\n`;
+  }
+  for (const recipe of recipes) {
+    lines.push([
+      `- ${recipe.id}`,
+      `status=${recipe.status}`,
+      `provider=${recipe.binding.provider}`,
+      `profile=${recipe.binding.profile}`,
+      `capability=${recipe.binding.capability}`,
+      `workspace=${recipe.binding.workspace}`
+    ].join(" "));
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function formatRecipeShow(recipe: {
+  id: string;
+  status: string;
+  lastVerifiedAt?: string;
+  binding: {
+    workspace: string;
+    provider: string;
+    profile: string;
+    environment?: string;
+    capability: string;
+  };
+  validationResults?: Array<{ status: string; message: string }>;
+}): string {
+  const lines = [
+    "TokenValve recipe",
+    `- id: ${recipe.id}`,
+    `- status: ${recipe.status}`,
+    `- workspace: ${recipe.binding.workspace}`,
+    `- provider: ${recipe.binding.provider}`,
+    `- profile: ${recipe.binding.profile}`,
+    `- environment: ${recipe.binding.environment ?? "none"}`,
+    `- capability: ${recipe.binding.capability}`,
+    `- lastVerifiedAt: ${recipe.lastVerifiedAt ?? "never"}`
+  ];
+  for (const result of recipe.validationResults ?? []) {
+    lines.push(`- validation: ${result.status} ${result.message}`);
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 function formatSecretList(profiles: Array<{

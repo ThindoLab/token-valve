@@ -351,7 +351,7 @@
 - `intent_request` 不能直接激活 production 写权限。
 - 并发 MCP 请求按 session/workspace 独立解析。
 
-### Phase 17: Recipe / Playbook MVP
+### Phase 17: Recipe / Playbook MVP（已完成）
 
 交付物：可验证、可复用的 Recipe。
 
