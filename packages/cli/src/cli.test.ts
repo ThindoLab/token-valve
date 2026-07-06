@@ -3,7 +3,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { CommanderError } from "commander";
-import { MemorySecretStore, type ProcessRunInput, type ProcessRunner } from "@tokenvalve/core";
+import {
+  MemorySecretStore,
+  type HttpRunInput,
+  type HttpRunner,
+  type ProcessRunInput,
+  type ProcessRunner
+} from "@tokenvalve/core";
 import { createCli } from "./cli.js";
 
 class FakeProcessRunner implements ProcessRunner {
@@ -13,22 +19,35 @@ class FakeProcessRunner implements ProcessRunner {
     this.calls.push(input);
     const token = input.env.GH_TOKEN ?? input.env.SUPABASE_ACCESS_TOKEN ?? "";
     return {
-      stdout: `ok ${token}`,
+      stdout: `ok ${token || input.args.join(" ")}`,
       stderr: "",
       exitCode: 0
     };
   }
 }
 
+class FakeHttpRunner implements HttpRunner {
+  public readonly calls: HttpRunInput[] = [];
+
+  public async run(input: HttpRunInput) {
+    this.calls.push(input);
+    return {
+      status: 200,
+      body: `ok ${input.headers.Authorization ?? ""} ${input.body ?? ""}`
+    };
+  }
+}
+
 async function runCli(
   args: string[],
-  options: { secretStore?: MemorySecretStore; processRunner?: ProcessRunner } = {}
+  options: { secretStore?: MemorySecretStore; processRunner?: ProcessRunner; httpRunner?: HttpRunner } = {}
 ): Promise<string> {
   const output: string[] = [];
   const program = createCli({
     writeOut: (value) => output.push(value),
     secretStore: options.secretStore,
-    processRunner: options.processRunner
+    processRunner: options.processRunner,
+    httpRunner: options.httpRunner
   });
 
   program.exitOverride();
@@ -388,5 +407,120 @@ describe("tokenvalve cli", () => {
         SUPABASE_ACCESS_TOKEN: token
       }
     });
+  });
+
+  it("runs structured HTTP requests with secret headers and redacted output", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "tokenvalve-cli-http-"));
+    const configDir = path.join(workspace, ".tokenvalve");
+    const store = new MemorySecretStore();
+    const runner = new FakeHttpRunner();
+    const token = "ghp_cli_http_token_value_123456";
+
+    await runCli([
+      "secret",
+      "add",
+      "--config-dir",
+      configDir,
+      "--workspace",
+      workspace,
+      "--profile",
+      "github:http",
+      "--provider",
+      "github",
+      "--environment",
+      "development",
+      "--secret-value",
+      token,
+      "--yes"
+    ], { secretStore: store });
+
+    const output = await runCli([
+      "http",
+      "request",
+      "--workspace",
+      workspace,
+      "--config-dir",
+      configDir,
+      "--provider",
+      "github",
+      "--method",
+      "GET",
+      "--url",
+      "https://api.github.com/user",
+      "--secret-header",
+      "Authorization: Bearer {{token}}"
+    ], { secretStore: store, httpRunner: runner });
+
+    expect(output).toContain("TokenValve http");
+    expect(output).toContain("decision: allow");
+    expect(output).toContain("profile: github:http");
+    expect(output).toContain("status: 200");
+    expect(output).not.toContain(token);
+    expect(runner.calls[0]).toMatchObject({
+      method: "GET",
+      url: "https://api.github.com/user",
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+  });
+
+  it("runs curl templates as args arrays with redacted output", async () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "tokenvalve-cli-curl-"));
+    const configDir = path.join(workspace, ".tokenvalve");
+    const store = new MemorySecretStore();
+    const runner = new FakeProcessRunner();
+    const token = "ghp_cli_curl_token_value_123456";
+
+    await runCli([
+      "secret",
+      "add",
+      "--config-dir",
+      configDir,
+      "--workspace",
+      workspace,
+      "--profile",
+      "github:curl",
+      "--provider",
+      "github",
+      "--environment",
+      "development",
+      "--secret-value",
+      token,
+      "--yes"
+    ], { secretStore: store });
+
+    const output = await runCli([
+      "curl",
+      "run",
+      "--workspace",
+      workspace,
+      "--config-dir",
+      configDir,
+      "--provider",
+      "github",
+      "--method",
+      "GET",
+      "--url",
+      "https://api.github.com/user",
+      "--secret-header",
+      "Authorization: Bearer {{token}}"
+    ], { secretStore: store, processRunner: runner });
+
+    expect(output).toContain("TokenValve curl");
+    expect(output).toContain("decision: allow");
+    expect(output).toContain("profile: github:curl");
+    expect(output).not.toContain(token);
+    expect(runner.calls[0]?.command).toBe("curl");
+    expect(runner.calls[0]?.args).toEqual([
+      "--fail-with-body",
+      "--silent",
+      "--show-error",
+      "--request",
+      "GET",
+      "https://api.github.com/user",
+      "--header",
+      `Authorization: Bearer ${token}`
+    ]);
   });
 });

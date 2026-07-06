@@ -91,6 +91,9 @@ export interface BaseCapabilityDefinition {
 export interface CliCapabilityDefinition extends BaseCapabilityDefinition {
   type: "cli-command" | "curl-template";
   commands: string[];
+  allowedHosts?: string[];
+  pathPrefixes?: string[];
+  methods?: string[];
 }
 
 export interface HttpCapabilityDefinition extends BaseCapabilityDefinition {

@@ -231,7 +231,7 @@
 - risk 规则支持参数顺序和 flag 变化。
 - 审计日志记录脱敏后的 provider/profile/environment/risk。
 
-### Phase 11: HTTP 与 Curl Capability
+### Phase 11: HTTP 与 Curl Capability（已完成）
 
 交付物：结构化 HTTP request 和受控 curl template。
 

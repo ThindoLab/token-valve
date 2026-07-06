@@ -3,13 +3,16 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   getCoreHealth,
+  runCurlTemplate,
   MacOSKeychainSecretStore,
   ProfileInventory,
   runGitHubCli,
+  runHttpRequest,
   runSupabaseCli,
   resolveContext,
   runScenarioInit,
   type AdapterDefinition,
+  type HttpRunner,
   type ProcessRunner,
   type ProfileMetadata,
   type ProfileStatus,
@@ -22,6 +25,7 @@ export interface CliOptions {
   writeOut?: (value: string) => void;
   secretStore?: SecretStore;
   processRunner?: ProcessRunner;
+  httpRunner?: HttpRunner;
 }
 
 export function createCli(options: CliOptions = {}): Command {
@@ -377,6 +381,84 @@ export function createCli(options: CliOptions = {}): Command {
       writeOut(formatSupabaseRun(result));
     });
 
+  const http = program
+    .command("http")
+    .description("Run structured HTTP requests with TokenValve credentials.");
+
+  http
+    .command("request")
+    .description("Run an allowlisted structured HTTP request.")
+    .requiredOption("--workspace <path>", "Workspace path.")
+    .requiredOption("--provider <name>", "Provider name.")
+    .requiredOption("--method <method>", "HTTP method.")
+    .requiredOption("--url <url>", "Request URL.")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--capability <id>", "Capability id.", "http-request")
+    .option("--header <header>", "Static header as Name: value.", collectValues, [])
+    .option("--secret-header <header>", "Secret template header as Name: Bearer {{token}}.", collectValues, [])
+    .option("--body <body>", "Request body.")
+    .action(async (rawOptions: HttpRequestCommandOptions) => {
+      const inventory = createInventory(rawOptions.configDir, rawOptions.workspace, options.secretStore);
+      const result = await runHttpRequest({
+        workspace: path.resolve(rawOptions.workspace),
+        config: {
+          profiles: inventory.listProfiles(),
+          workspaces: inventory.getBindings()
+        },
+        adapters: [createHttpCliAdapter(rawOptions.provider, rawOptions.capability)],
+        secretStore: options.secretStore ?? new MacOSKeychainSecretStore(),
+        provider: rawOptions.provider,
+        method: rawOptions.method,
+        url: rawOptions.url,
+        headers: parseHeaders(rawOptions.header),
+        body: rawOptions.body,
+        secretTemplates: {
+          headers: parseHeaders(rawOptions.secretHeader)
+        },
+        runner: options.httpRunner
+      });
+      writeOut(formatHttpRun(result));
+    });
+
+  const curl = program
+    .command("curl")
+    .description("Run structured curl templates with TokenValve credentials.");
+
+  curl
+    .command("run")
+    .description("Run an allowlisted curl request without shell strings.")
+    .requiredOption("--workspace <path>", "Workspace path.")
+    .requiredOption("--provider <name>", "Provider name.")
+    .requiredOption("--method <method>", "HTTP method.")
+    .requiredOption("--url <url>", "Request URL.")
+    .option("--config-dir <path>", "TokenValve config directory.")
+    .option("--capability <id>", "Capability id.", "curl-template")
+    .option("--header <header>", "Static header as Name: value.", collectValues, [])
+    .option("--secret-header <header>", "Secret template header as Name: Bearer {{token}}.", collectValues, [])
+    .option("--body <body>", "Request body.")
+    .action(async (rawOptions: CurlRunCommandOptions) => {
+      const inventory = createInventory(rawOptions.configDir, rawOptions.workspace, options.secretStore);
+      const result = await runCurlTemplate({
+        workspace: path.resolve(rawOptions.workspace),
+        config: {
+          profiles: inventory.listProfiles(),
+          workspaces: inventory.getBindings()
+        },
+        adapters: [createCurlCliAdapter(rawOptions.provider, rawOptions.capability)],
+        secretStore: options.secretStore ?? new MacOSKeychainSecretStore(),
+        provider: rawOptions.provider,
+        method: rawOptions.method,
+        url: rawOptions.url,
+        headers: parseHeaders(rawOptions.header),
+        body: rawOptions.body,
+        secretTemplates: {
+          headers: parseHeaders(rawOptions.secretHeader)
+        },
+        runner: options.processRunner
+      });
+      writeOut(formatCurlRun(result));
+    });
+
   return program;
 }
 
@@ -486,6 +568,30 @@ interface SupabaseRunCommandOptions {
   environment?: string;
 }
 
+interface HttpRequestCommandOptions {
+  workspace: string;
+  provider: string;
+  method: string;
+  url: string;
+  configDir?: string;
+  capability: string;
+  header: string[];
+  secretHeader: string[];
+  body?: string;
+}
+
+interface CurlRunCommandOptions {
+  workspace: string;
+  provider: string;
+  method: string;
+  url: string;
+  configDir?: string;
+  capability: string;
+  header: string[];
+  secretHeader: string[];
+  body?: string;
+}
+
 function collectValues(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
@@ -564,6 +670,55 @@ function createLlmAdapter(provider: string, profiles: ProfileMetadata[]): Adapte
     }],
     riskRules: [{ capability: `${provider}-default`, risk: "read" }]
   };
+}
+
+function createHttpCliAdapter(provider: string, capabilityId: string): AdapterDefinition {
+  return {
+    provider,
+    capabilities: [{
+      id: capabilityId,
+      type: "http-request",
+      allowedHosts: providerAllowedHosts(provider),
+      pathPrefixes: ["/"],
+      methods: ["GET"]
+    }],
+    riskRules: [{ capability: capabilityId, method: "GET", pathPrefix: "/", risk: "read" }]
+  };
+}
+
+function createCurlCliAdapter(provider: string, capabilityId: string): AdapterDefinition {
+  return {
+    provider,
+    capabilities: [{
+      id: capabilityId,
+      type: "curl-template",
+      commands: ["curl"],
+      allowedHosts: providerAllowedHosts(provider),
+      pathPrefixes: ["/"],
+      methods: ["GET"]
+    }],
+    riskRules: [{ capability: capabilityId, match: ["GET"], risk: "read" }]
+  };
+}
+
+function providerAllowedHosts(provider: string): string[] {
+  if (provider === "github") {
+    return ["api.github.com"];
+  }
+  if (provider === "supabase") {
+    return ["api.supabase.com"];
+  }
+  return [];
+}
+
+function parseHeaders(values: string[]): Record<string, string> {
+  return Object.fromEntries(values.map((value) => {
+    const separator = value.indexOf(":");
+    if (separator <= 0) {
+      throw new Error(`Header must be formatted as Name: value: ${value}`);
+    }
+    return [value.slice(0, separator).trim(), value.slice(separator + 1).trim()];
+  }));
 }
 
 function formatInitResult(result: ReturnType<typeof runScenarioInit>, dryRun: boolean): string {
@@ -718,5 +873,41 @@ function formatSupabaseRun(result: Awaited<ReturnType<typeof runSupabaseCli>>): 
     lines.push("", "stderr:", result.stderr.replace(/\n$/, ""));
   }
 
+  return `${lines.join("\n")}\n`;
+}
+
+function formatHttpRun(result: Awaited<ReturnType<typeof runHttpRequest>>): string {
+  return [
+    "TokenValve http",
+    `- decision: ${result.resolve.decision}`,
+    `- reason: ${result.resolve.reason}`,
+    `- provider: ${result.resolve.provider ?? "none"}`,
+    `- profile: ${result.resolve.profile ?? "none"}`,
+    `- risk: ${result.resolve.risk ?? "none"}`,
+    `- executed: ${result.executed ? "yes" : "no"}`,
+    `- status: ${result.status}`,
+    "",
+    "body:",
+    result.body.replace(/\n$/, "")
+  ].join("\n") + "\n";
+}
+
+function formatCurlRun(result: Awaited<ReturnType<typeof runCurlTemplate>>): string {
+  const lines = [
+    "TokenValve curl",
+    `- decision: ${result.resolve.decision}`,
+    `- reason: ${result.resolve.reason}`,
+    `- provider: ${result.resolve.provider ?? "none"}`,
+    `- profile: ${result.resolve.profile ?? "none"}`,
+    `- risk: ${result.resolve.risk ?? "none"}`,
+    `- executed: ${result.executed ? "yes" : "no"}`,
+    `- exitCode: ${result.exitCode}`
+  ];
+  if (result.stdout) {
+    lines.push("", "stdout:", result.stdout.replace(/\n$/, ""));
+  }
+  if (result.stderr) {
+    lines.push("", "stderr:", result.stderr.replace(/\n$/, ""));
+  }
   return `${lines.join("\n")}\n`;
 }

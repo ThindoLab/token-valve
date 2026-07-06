@@ -2,6 +2,8 @@
 
 ## 2026-07-06
 
+- Added the Phase 11 HTTP and curl capability layer with structured requests, allowlist enforcement, secret template injection, args-array curl execution, and redacted audit/output handling.
+- Added the Phase 11 feature spec covering HTTP/curl capability requirements, implementation plan, and validation checklist.
 - Added the Phase 10 Supabase MVP with controlled CLI/API execution, staging read support, production write blocking, token injection, and redacted audit/output handling.
 - Added the Phase 10 feature spec covering Supabase MVP requirements, implementation plan, and validation checklist.
 - Added the Phase 9 GitHub MVP with per-execution `gh` token injection, session-aware profile routing, output/audit redaction, and a `tokenvalve github run` CLI path.

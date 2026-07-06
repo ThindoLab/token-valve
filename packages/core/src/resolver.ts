@@ -220,8 +220,24 @@ function findCapability(
 function capabilityMatches(capability: CapabilityDefinition, execution: ExecutionContext): boolean {
   switch (execution.kind) {
     case "cli":
-      return (capability.type === "cli-command" || capability.type === "curl-template")
-        && capability.commands.includes(execution.command);
+      if (capability.type !== "cli-command" && capability.type !== "curl-template") {
+        return false;
+      }
+      if (!capability.commands.includes(execution.command)) {
+        return false;
+      }
+      if (capability.type === "curl-template" && (capability.allowedHosts || capability.pathPrefixes || capability.methods)) {
+        const [method, rawUrl] = execution.args;
+        if (!method || !rawUrl) {
+          return false;
+        }
+        const url = new URL(rawUrl);
+        const methodMatches = !capability.methods || capability.methods.includes(method.toUpperCase());
+        const hostMatches = !capability.allowedHosts || capability.allowedHosts.includes(url.host);
+        const pathMatches = !capability.pathPrefixes || capability.pathPrefixes.some((prefix) => url.pathname.startsWith(prefix));
+        return methodMatches && hostMatches && pathMatches;
+      }
+      return true;
     case "http": {
       if (capability.type !== "http-request") {
         return false;
