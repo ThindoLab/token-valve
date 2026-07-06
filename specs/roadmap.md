@@ -110,7 +110,7 @@
 - 无法可靠脱敏的输出会被截断或标记为不可安全返回。
 - 单元测试覆盖 token、header、URL、SSH remote、agent socket 等场景。
 
-### Phase 5: Secret Store Interface
+### Phase 5: Secret Store Interface（已完成）
 
 交付物：后端无关的 secret storage interface 与 macOS Keychain 实现。
 
