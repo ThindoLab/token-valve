@@ -479,7 +479,7 @@
 - 每个问题都有下一步建议。
 - Public MVP 前所有关键失败路径都有诊断入口。
 
-### Phase 23: Public MVP
+### Phase 23: Public MVP（已完成）
 
 交付物：公开可安装的 macOS MVP。
 

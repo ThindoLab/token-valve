@@ -1,0 +1,23 @@
+id: internal-api-status
+status: verified
+binding:
+  workspace: /path/to/workspace
+  provider: internal-api
+  profile: internal-api-default
+  environment: development
+  capability: internal-status
+riskRules:
+  - capability: internal-status
+    method: GET
+    pathPrefix: /status
+    risk: read
+validationSteps:
+  - id: internal-status-check
+    description: Run a structured GET request with Authorization rendered from the local secret store.
+validationResults:
+  - status: passed
+    checkedAt: "2026-07-06T00:00:00.000Z"
+    message: Internal status endpoint validation passed without storing raw secrets.
+createdAt: "2026-07-06T00:00:00.000Z"
+updatedAt: "2026-07-06T00:00:00.000Z"
+lastVerifiedAt: "2026-07-06T00:00:00.000Z"

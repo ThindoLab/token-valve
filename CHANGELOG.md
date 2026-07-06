@@ -2,6 +2,8 @@
 
 ## 2026-07-06
 
+- Added the Phase 23 Public MVP documentation set with install instructions, quick start, provider examples, MCP/Skill onboarding guidance, Recipe examples, threat model, known limitations, and backlog.
+- Added the Phase 23 feature spec covering Public MVP requirements, implementation plan, and validation checklist.
 - Added the Phase 22 Doctor and Hardening MVP with real diagnostics for missing binaries, invalid mappings, profile states, shim PATH issues, global-switch locks, plaintext-secret risks, and actionable repair suggestions.
 - Added the Phase 22 feature spec covering Doctor and Hardening requirements, implementation plan, and validation checklist.
 - Added the Phase 21 Global Switch Compatibility MVP with adapter opt-in execution modes, provider lock TTLs, snapshot/restore handling, repair suggestions, and audit coverage.

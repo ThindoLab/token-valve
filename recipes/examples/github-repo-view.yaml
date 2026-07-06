@@ -1,0 +1,24 @@
+id: github-repo-view
+status: verified
+binding:
+  workspace: /path/to/workspace
+  provider: github
+  profile: github-personal
+  environment: development
+  capability: github-cli
+riskRules:
+  - capability: github-cli
+    match:
+      - repo
+      - view
+    risk: read
+validationSteps:
+  - id: gh-repo-view
+    description: Run gh repo view with per-execution token injection.
+validationResults:
+  - status: passed
+    checkedAt: "2026-07-06T00:00:00.000Z"
+    message: GitHub repo view validation passed without storing raw secrets.
+createdAt: "2026-07-06T00:00:00.000Z"
+updatedAt: "2026-07-06T00:00:00.000Z"
+lastVerifiedAt: "2026-07-06T00:00:00.000Z"
