@@ -330,7 +330,7 @@
 
 目标：让 Agent 不只是“调用工具”，而是能引导用户新增密钥、验证方案、沉淀 Recipe，并在下次自动使用验证过的配置。
 
-### Phase 16: MCP Server MVP
+### Phase 16: MCP Server MVP（已完成）
 
 交付物：Agent-facing MCP server。
 
