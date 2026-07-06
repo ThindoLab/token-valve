@@ -1,32 +1,34 @@
 # TokenValve
 
-TokenValve is a local secret manager, credential broker, and execution gateway for AI coding agents and developer CLIs.
+默认语言：中文 | [English](README.en.md)
 
-It helps Codex, Claude Code, Pi Agent, local scripts, HTTP requests, SSH, and provider CLIs use the right local credential for the current workspace without handing raw secrets to the agent, writing `.env` files into projects, or relying on global auth state.
+TokenValve 是一个面向 AI 编程 Agent 和开发者 CLI 的本地密钥管理器、凭证中转层和执行网关。
 
-## What It Is
+它帮助 Codex、Claude Code、Pi Agent、本地脚本、HTTP 请求、SSH 和 provider CLI 在当前 workspace 使用正确的本地凭证，同时避免把原始密钥交给 Agent、把 `.env` 写进项目目录，或依赖容易冲突的全局登录状态。
 
-- A macOS-first local CLI and library for profile-based credential routing.
-- A per-execution broker for GitHub, Supabase, Vercel, HTTP/curl, SSH/git-over-SSH, LLM API keys, and custom providers.
-- A safety layer for production writes through local human intent grants.
-- A redacted dashboard and doctor for understanding local state.
-- A foundation for MCP tools and Skill onboarding flows.
+## 它是什么
 
-## What It Is Not
+- macOS-first 的本地 CLI 和 TypeScript library，用于按 workspace/profile 路由凭证。
+- GitHub、Supabase、Vercel、HTTP/curl、SSH/git-over-SSH、LLM API key 和 custom provider 的单次执行凭证中转层。
+- 对 production 写操作提供本地 human intent 授权。
+- 提供脱敏 dashboard 和 doctor，用于解释本地密钥状态与配置问题。
+- 为 MCP tools 和 Skill onboarding 流程提供基础能力。
 
-- Not a cloud vault or team secret sharing service.
-- Not a full replacement for 1Password, Bitwarden, Vault, or macOS Keychain.
-- Not a sandbox for a malicious agent with arbitrary local command execution.
-- Not a Web UI in the MVP.
+## 它不是什么
 
-## Requirements
+- 不是云端密钥库或团队密钥共享服务。
+- 不是 1Password、Bitwarden、Vault 或 macOS Keychain 的完整替代品。
+- 不是针对恶意 Agent 任意本地命令执行的沙箱。
+- MVP 阶段不提供完整 Web UI。
+
+## 环境要求
 
 - macOS
 - Node.js 22+
 - pnpm
-- Optional provider CLIs depending on your workflows: `gh`, `supabase`, `vercel`, `ssh`, `git`, `curl`
+- 根据工作流可选安装 provider CLI：`gh`、`supabase`、`vercel`、`ssh`、`git`、`curl`
 
-## Install From Source
+## 从源码安装
 
 ```bash
 git clone https://github.com/ThindoLab/token-valve.git
@@ -36,15 +38,15 @@ pnpm build
 node packages/cli/dist/index.js doctor --workspace "$PWD" --config-dir "$PWD/.tokenvalve"
 ```
 
-For local development, you can run commands through:
+本地开发时可以直接通过构建后的 CLI 运行：
 
 ```bash
 node packages/cli/dist/index.js --help
 ```
 
-## Quick Start
+## 快速开始
 
-Initialize a workspace with explicit providers:
+显式初始化 workspace 和 provider：
 
 ```bash
 node packages/cli/dist/index.js init \
@@ -57,7 +59,7 @@ node packages/cli/dist/index.js init \
   --yes
 ```
 
-Add a GitHub profile. Use your real token only in the CLI/local input path, never in an agent prompt:
+添加一个 GitHub profile。真实 token 只应进入 CLI 或本地受控输入路径，不要粘贴进 Agent 对话：
 
 ```bash
 node packages/cli/dist/index.js secret add \
@@ -70,14 +72,14 @@ node packages/cli/dist/index.js secret add \
   --yes
 ```
 
-Verify the profile:
+验证 profile：
 
 ```bash
 node packages/cli/dist/index.js secret test github-personal \
   --config-dir "$PWD/.tokenvalve"
 ```
 
-Run a safe GitHub command with per-execution credential injection:
+使用单次执行凭证注入运行安全的 GitHub 命令：
 
 ```bash
 node packages/cli/dist/index.js github run \
@@ -86,7 +88,7 @@ node packages/cli/dist/index.js github run \
   -- repo view
 ```
 
-Open the redacted dashboard:
+打开脱敏 dashboard：
 
 ```bash
 node packages/cli/dist/index.js dashboard \
@@ -94,7 +96,7 @@ node packages/cli/dist/index.js dashboard \
   --config-dir "$PWD/.tokenvalve"
 ```
 
-Run doctor when something fails:
+遇到配置或执行问题时运行 doctor：
 
 ```bash
 node packages/cli/dist/index.js doctor \
@@ -102,30 +104,30 @@ node packages/cli/dist/index.js doctor \
   --config-dir "$PWD/.tokenvalve"
 ```
 
-## Provider Examples
+## Provider 示例
 
-See [docs/provider-examples.md](docs/provider-examples.md) for GitHub, Supabase, Vercel, LLM, HTTP/curl, SSH, and custom provider examples.
+查看 [docs/provider-examples.md](docs/provider-examples.md)，里面包含 GitHub、Supabase、Vercel、LLM、HTTP/curl、SSH 和 custom provider 示例。
 
-## MCP And Skills
+## MCP 与 Skills
 
-See [docs/mcp-and-skills.md](docs/mcp-and-skills.md) for MCP tool boundaries and Skill onboarding examples.
+查看 [docs/mcp-and-skills.md](docs/mcp-and-skills.md)，了解 MCP 工具边界和 Skill onboarding 示例。
 
-The short version:
+简短版本：
 
-- MCP is the capability boundary.
-- Skill is the orchestration layer.
-- Secrets should enter through local controlled input, not through agent chat.
-- Verified Recipe metadata can be reused by later agents.
+- MCP 是能力边界。
+- Skill 是编排层。
+- Secret 应通过本地受控输入进入系统，不应进入 Agent chat。
+- 已验证 Recipe 的元数据可以被后续 Agent 复用。
 
 ## Recipes
 
-Examples live in [recipes/examples](recipes/examples).
+示例位于 [recipes/examples](recipes/examples)。
 
-Recipe files describe provider/profile/capability/workspace/risk/validation metadata. They must not contain raw secrets.
+Recipe 文件描述 provider、profile、capability、workspace、risk 和 validation 元数据。它们绝不能包含原始 secret。
 
-## Production Writes
+## Production 写操作
 
-Production write and dangerous operations require explicit local human intent:
+Production 写操作和危险操作需要显式本地 human intent：
 
 ```bash
 node packages/cli/dist/index.js use \
@@ -138,25 +140,25 @@ node packages/cli/dist/index.js use \
   --yes
 ```
 
-## Security Boundary
+## 安全边界
 
-Read [docs/threat-model.md](docs/threat-model.md).
+阅读 [docs/threat-model.md](docs/threat-model.md)。
 
-TokenValve reduces accidental leakage, wrong-profile execution, global auth state races, and unconfirmed production writes. It does not claim to contain a hostile local agent that can run arbitrary commands.
+TokenValve 用来降低误泄露、错误 profile 执行、全局 auth 状态竞态和未经确认的 production 写操作风险。它不声称能封住一个可以任意执行本地命令的恶意 Agent。
 
-## Known Limitations And Backlog
+## 已知限制与 Backlog
 
-Read [docs/known-limitations.md](docs/known-limitations.md).
+阅读 [docs/known-limitations.md](docs/known-limitations.md)。
 
-Highlights:
+重点限制：
 
-- macOS-first MVP.
-- Source install only.
-- No full Web UI yet.
-- No team cloud vault.
-- No hostile-agent sandbox.
+- MVP macOS-first。
+- 当前只提供源码安装。
+- 暂无完整 Web UI。
+- 不是团队云端 vault。
+- 不是 hostile-agent sandbox。
 
-## Development
+## 开发
 
 ```bash
 pnpm install
